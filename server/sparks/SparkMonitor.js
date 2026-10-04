@@ -157,6 +157,9 @@ export class SparkMonitor {
     // Rebuild LLM probe map — add new ports, remove stale ones, update existing
     const ports = this._llmMonitoringEnabled() ? this._llmPorts() : [];
     const prevProbes = this.llmProbes;
+    for (const [port, probe] of prevProbes) {
+      if (!ports.includes(port)) probe.dispose?.();
+    }
     this.llmProbes = new Map();
     for (const port of ports) {
       const existing = prevProbes.get(port);
@@ -420,6 +423,7 @@ export class SparkMonitor {
 
   /** Stop background polling. */
   stop() {
+    for (const probe of this.llmProbes.values()) probe.dispose?.();
     this.collector.invalidatePendingCollections();
     this._runGeneration += 1;
     this._metricCollectionSuccessful = { gpu: false, cpu: false };
@@ -447,6 +451,20 @@ export class SparkMonitor {
     const ports = this._llmMonitoringEnabled() ? this._llmPorts() : [];
     const comfyOn = this._comfyMonitoringEnabled();
     const tailscaleOn = this._tailscaleMonitoringEnabled();
+    const desktop = process.env.SPARKDASH_DESKTOP === "1";
+    const now = Date.now();
+    const fresh = (domain, successful = true) => this.online && successful &&
+      Number.isFinite(this._lastUpdate[domain]) && now >= this._lastUpdate[domain] && now - this._lastUpdate[domain] <= 10000;
+    const metric = (domain, value, valid = true) => !desktop || fresh(domain, valid) ? value : null;
+    const quality = (domain, source, valid = true, maxAgeMs = 10000) => {
+      const observedAt = Number.isFinite(this._lastUpdate[domain]) ? this._lastUpdate[domain] : null;
+      const age = observedAt == null ? null : now - observedAt;
+      return {
+        observedAt,
+        status: observedAt == null || !valid ? 'unknown' : !this.online || age < 0 || age > maxAgeMs ? 'stale' : 'current',
+        source,
+      };
+    };
     return {
       id: this.spark.id,
       name: this.spark.name,
@@ -462,6 +480,7 @@ export class SparkMonitor {
       role: this.spark.role || (this.spark.workerNode ? "worker" : "standalone"),
       workerLabel: this.spark.workerLabel || null,
       workerHeadId: this.spark.workerHeadId || null,
+      clusterName: this.spark.clusterName || null,
       // Derived display label (head model mirror). Raw workerLabel above is
       // untouched — frontend prefers a non-empty manual label over this.
       workerDerivedLabel: this.workerDerivedLabel(),
@@ -478,6 +497,14 @@ export class SparkMonitor {
       tailscaleMonitoring: tailscaleOn,
       hermes: this._hermes,
       hardware: this._hardwareSummary,
+      ...(desktop ? { metricQuality: {
+        gpu: quality('gpu', 'SSH · nvidia-smi', this._metricCollectionSuccessful.gpu),
+        cpu: quality('cpu', 'SSH · /proc/stat and temperature sensors; CPU power estimated from utilization', this._metricCollectionSuccessful.cpu),
+        memory: quality('memory', 'SSH · /proc/meminfo; CPU/GPU split estimated from process memory', this._metrics.unifiedMemory?.total > 0),
+        ram: quality('ram', 'SSH · /proc/meminfo', this._metrics.ram?.total > 0),
+        network: quality('network', 'SSH · interface counter differences'),
+        storage: quality('storage', 'SSH · filesystem capacity and disk counters', true, Math.max(10000, POLL_INTERVAL_STORAGE * 2)),
+      } } : {}),
       metrics: {
         // NOTE: no `timestamp` here on purpose. The broadcast path skips
         // snapshots whose JSON is byte-identical to the previous one (see
@@ -486,12 +513,12 @@ export class SparkMonitor {
         // measured values are unchanged. The frontend does not consume a
         // metrics timestamp; the WS receive time can serve if one is ever
         // needed.
-        gpu: this._metrics.gpu,
-        cpu: this._metrics.cpu,
-        ram: this._metrics.ram,
-        storage: this._metrics.storage,
-        network: this._metrics.network,
-        unifiedMemory: this._metrics.unifiedMemory,
+        gpu: metric('gpu', this._metrics.gpu, this._metricCollectionSuccessful.gpu),
+        cpu: metric('cpu', this._metrics.cpu, this._metricCollectionSuccessful.cpu),
+        ram: metric('ram', this._metrics.ram, this._metrics.ram?.total > 0),
+        storage: desktop && !this.online ? [] : this._metrics.storage,
+        network: metric('network', this._metrics.network),
+        unifiedMemory: metric('memory', this._metrics.unifiedMemory, this._metrics.unifiedMemory?.total > 0),
         llm: this._metrics.llm,
         comfy: comfyOn ? this._metrics.comfy : null,
         tailscale: tailscaleOn ? this._metrics.tailscale : null,
@@ -625,7 +652,7 @@ export class SparkMonitor {
           result = this.tailscaleProbe ? await this.tailscaleProbe.probe() : null;
           break;
         case "hermes":
-          result = this.hermesProbe ? await this.hermesProbe.check() : null;
+          result = this.hermesProbe ? await this.hermesProbe.status() : null;
           break;
       }
       // Re-check after the await — `stop()`/`updateSpark()` may have torn
@@ -738,8 +765,8 @@ export class SparkMonitor {
       ...prev,
       installed: result.installed,
       version: result.version,
-      updateAvailable: result.updateAvailable,
-      behindCommits: result.behindCommits,
+      updateAvailable: result.statusOnly ? prev.updateAvailable : result.updateAvailable,
+      behindCommits: result.statusOnly ? prev.behindCommits : result.behindCommits,
       checkedAt: result.checkedAt,
       error: result.error ?? null,
     };

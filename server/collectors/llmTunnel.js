@@ -113,10 +113,12 @@ export async function probeLlmHttp(host, port, opts = {}) {
   const apiKey = opts.apiKey != null ? String(opts.apiKey).trim() : "";
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   try {
-    const res = await fetchImpl(`http://${host}:${port}/v1/models`, {
+    const address = host.includes(':') ? `[${host}]` : host;
+    const res = await fetchImpl(`http://${address}:${port}/v1/models`, {
       signal: AbortSignal.timeout(timeoutMs),
       headers,
     });
+    await res.body?.cancel();
     return res.status !== 404 && res.status < 500;
   } catch {
     return false;
@@ -174,7 +176,7 @@ export async function openSshLlmTunnel(spark, remotePort, opts = {}) {
     stdio: ["ignore", "ignore", "pipe"],
   });
   if (child.stderr) {
-    child.stderr.setEncoding("text");
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
       if (stderr.length > 4000) stderr = stderr.slice(-2000);
@@ -189,7 +191,7 @@ export async function openSshLlmTunnel(spark, remotePort, opts = {}) {
     }
     setTimeout(() => {
       try {
-        if (!child.killed) child.kill("SIGKILL");
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
       } catch {
         /* ignore */
       }

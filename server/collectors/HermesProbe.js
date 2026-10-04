@@ -125,17 +125,11 @@ export function chooseLocalInvocation({ mntNs, passwdText, currentUid, user, cmd
  * (exit 0) when nothing is found.
  */
 function buildHermesCmd(spark, actionCmd) {
-  const user = spark.ssh?.user || "root";
   return [
-    // A previous interrupted `hermes update` can leave a stale git lock
-    // (e.g. .git/shallow.lock) that makes every later fetch fail with
-    // "Unable to create ... File exists". Clear leftover locks in the hermes
-    // repo before running — idempotent and safe (no git is running yet).
-    `if [ -d /home/${user}/.hermes ]; then find /home/${user}/.hermes -type f -name '*.lock' -path '*/.git/*' -delete 2>/dev/null; fi`,
     // Explicit PATH bootstrap — never rely on remote shell rc files.
-    `export PATH="/home/${user}/.local/bin:/home/${user}/bin:/usr/local/bin:/usr/bin:/bin:$PATH"`,
+    'export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin:$PATH"',
     `BIN=$(command -v hermes)`,
-    `if [ -z "$BIN" ]; then BIN=$(ls -d /home/${user}/.local/bin/hermes /usr/local/bin/hermes 2>/dev/null | head -n 1); fi`,
+    'if [ -z "$BIN" ]; then BIN=$(ls -d "$HOME/.local/bin/hermes" /usr/local/bin/hermes 2>/dev/null | head -n 1); fi',
     `if [ -z "$BIN" ]; then echo '${HERMES_MISSING}'; exit 0; fi`,
     `echo "HERMES_BIN=$BIN"`,
     // Surface a broken launcher (e.g. missing venv entry point) instead of
@@ -257,24 +251,6 @@ export class HermesProbe {
       cmd,
     });
 
-    if (inv.repair) {
-      const r = inv.repair;
-      const script =
-        `ROOTFILE=$(find '${r.home}/.hermes' -user root -print -quit 2>/dev/null); ` +
-        `if [ -n "$ROOTFILE" ]; then chown -R ${r.uid}:${r.gid} '${r.home}/.hermes' 2>/dev/null || true; fi`;
-      try {
-        await this._spawn(
-          r.mntNs ? "nsenter" : "sh",
-          r.mntNs
-            ? ["--mount=" + r.mntNs, "--", "sh", "-c", script]
-            : ["-c", script],
-          20000
-        );
-      } catch {
-        /* ownership repair is best-effort — never block hermes on it */
-      }
-    }
-
     return this._spawn(inv.file, inv.args, timeoutMs);
   }
 
@@ -295,11 +271,15 @@ export class HermesProbe {
   }
 
   /**
-   * Check whether an update is available. Read-only on the target.
+   * Check update availability. The online check runs git fetch on the target.
    * @returns {Promise<object>} installed / version / updateAvailable / behindCommits /
    *   checkedAt / error (never throws)
    */
-  async check() {
+  async status() {
+    return this.check({ online: false });
+  }
+
+  async check({ online = true } = {}) {
     const checkedAt = Date.now();
     const notInstalled = {
       installed: false,
@@ -310,7 +290,7 @@ export class HermesProbe {
       error: null,
     };
     try {
-      const out = await this._run(buildHermesCmd(this.spark, CHECK_ACTION), CHECK_TIMEOUT_MS);
+      const out = await this._run(buildHermesCmd(this.spark, online ? CHECK_ACTION : "true"), CHECK_TIMEOUT_MS);
       if (out.includes(HERMES_MISSING)) return notInstalled;
       if (out.includes(HERMES_LAUNCH_FAIL)) {
         return {
@@ -324,6 +304,10 @@ export class HermesProbe {
             "Run one-click Update Hermes to attempt an automatic repair.",
         };
       }
+      if (!online) return {
+        installed: true, version: parseVersion(out), updateAvailable: null,
+        behindCommits: null, checkedAt, error: null, statusOnly: true,
+      };
       const parsed = parseCheck(out);
       return {
         installed: true,
@@ -360,11 +344,8 @@ export class HermesProbe {
    * @returns {Promise<object|null>} { count, headSha, commits: {sha,title}[] }
    */
   async pendingCommits() {
-    const user = this.spark.ssh?.user || "root";
-    const repo = `/home/${user}/.hermes/hermes-agent`;
     const script = [
-      `REPO='${repo}'`,
-      `git -C "$REPO" fetch origin --quiet 2>/dev/null || true`,
+      'REPO="$HOME/.hermes/hermes-agent"',
       `echo __COMMITS__`,
       `git -C "$REPO" log -30 --oneline --format=%H%x09%s HEAD..origin/main 2>/dev/null`,
       `echo __COUNT__`,
@@ -394,13 +375,11 @@ export class HermesProbe {
    * @returns {Promise<boolean>} true when the launcher became usable again
    */
   async _repairVenv() {
-    const user = this.spark.ssh?.user || "root";
-    const venv = `/home/${user}/.hermes/hermes-agent/venv`;
     const script = [
-      `UV='/home/${user}/.hermes/bin/uv'`,
+      'UV="$HOME/.hermes/bin/uv"',
       `if [ ! -x "$UV" ]; then UV=$(command -v uv 2>/dev/null); fi`,
       `if [ -z "$UV" ] || [ ! -x "$UV" ]; then echo '__UV_MISSING__'; exit 0; fi`,
-      `cd '/home/${user}/.hermes/hermes-agent' && VIRTUAL_ENV='${venv}' "$UV" pip install -e . >/dev/null 2>&1`,
+      'cd "$HOME/.hermes/hermes-agent" && VIRTUAL_ENV="$HOME/.hermes/hermes-agent/venv" "$UV" pip install -e . >/dev/null 2>&1',
       `exit 0`,
     ].join("; ");
     try {

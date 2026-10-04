@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { SparkRegistry } from "./sparks/SparkRegistry.js";
 import { SparkMonitor } from "./sparks/SparkMonitor.js";
-import { sshExec } from "./collectors/ssh.js";
+import { sshExec, closeSshConnections } from "./collectors/ssh.js";
 import { comfyCancelJob } from "./collectors/comfyActions.js";
 import {
   validateSparkTarget,
@@ -50,9 +50,13 @@ import {
   registerFleetEnergyRoute,
 } from "./energy/FleetEnergyRuntime.js";
 import { testSparkConnectivity } from "./connectivity.js";
+import { discoverFabric } from "./collectors/FabricDiscovery.js";
+import { FabricBenchmark } from "./collectors/FabricBenchmark.js";
 import { inspectStartupPreflight, logStartupPreflight } from "./startupPreflight.js";
+import { authorizeDesktopRequest, desktopMiddleware } from "./desktop-policy.js";
+import { serviceTargets, serviceBaseUrl } from "./collectors/ServiceTargets.js";
 
-dotenv.config();
+if (process.env.SPARKDASH_DESKTOP !== "1") dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,8 +65,12 @@ const ROOT = path.resolve(__dirname, "..");
 // Default to loopback. Direct non-loopback binds fail closed because this release
 // does not authenticate LAN clients. Use an SSH tunnel, authenticated reverse
 // proxy, or Tailscale Serve (docs/REMOTE-ACCESS.md).
-const BIND_HOST = process.env.BIND_HOST || "127.0.0.1";
-const PORT = parseInt(process.env.PORT || "5555", 10);
+export function createBackend({ monitorFactory = (spark, options) => new SparkMonitor(spark, options), prepareCredentials = async () => {}, fabricDiscovery = discoverFabric, fabricBenchmark = new FabricBenchmark() } = {}) {
+const desktop = process.env.SPARKDASH_DESKTOP === "1";
+const BIND_HOST = desktop ? "127.0.0.1" : process.env.BIND_HOST || "127.0.0.1";
+const PORT = desktop ? 0 : parseInt(process.env.PORT || "5555", 10);
+let origin = null;
+const credentials = () => ({ token: configuredToken(), origin });
 const LLM_PORT = parseInt(process.env.LLM_PORT || "8888", 10);
 const COMFY_PORT = parseInt(process.env.COMFY_PORT || "8188", 10);
 
@@ -122,6 +130,9 @@ async function benchHttpTarget(spark, configuredPorts, body) {
   if (hostRaw) {
     const parsed = parseLlmTargetInput(hostRaw, body?.port, body?.tls);
     const extra = extraBenchmarkHosts();
+    // The authenticated desktop window explicitly supplies this temporary target.
+    // Preserve address validation without requiring an invisible environment knob.
+    if (desktop) extra.add(parsed.host);
     if (!extra.has(parsed.host)) {
       const err = new Error(
         `Remote benchmark host ${parsed.host} is not allowlisted. Add it to SPARKDASH_BENCH_HOSTS or use a saved Spark LLM target.`
@@ -166,12 +177,18 @@ async function benchHttpTarget(spark, configuredPorts, body) {
     tls: false,
     custom: false,
     apiKey: resolveLlmApiKey(spark, port),
-    resolveTarget: ({ onStatus, signal }) =>
-      resolveLlmHttpTarget(spark, port, {
+    resolveTarget: async ({ onStatus, signal }) => {
+      if (desktop) {
+        const lease = await serviceTargets.acquire(spark, port);
+        if (signal?.aborted) { lease.close(); throw new DOMException('Aborted', 'AbortError'); }
+        return lease;
+      }
+      return resolveLlmHttpTarget(spark, port, {
         apiKey: resolveLlmApiKey(spark, port),
         onStatus,
         signal,
-      }),
+      });
+    },
   };
 }
 
@@ -263,7 +280,7 @@ const monitors = new Map();
 // ─── Start monitor for a Spark ───────────────────────────
 function startMonitor(spark) {
   if (monitors.has(spark.id)) return;
-  const monitor = new SparkMonitor(spark, {
+  const monitor = monitorFactory(spark, {
     onWolMac: (id, mac) => {
       const updated = registry.noteDetectedMac(id, mac);
       if (updated) {
@@ -320,7 +337,23 @@ const app = express();
 const server = createServer(app);
 
 app.use(express.json());
-app.use(createAuthMiddleware());
+app.use(desktop ? desktopMiddleware(credentials) : createAuthMiddleware());
+app.use(async (req, res, next) => {
+  if (desktop) {
+    const writesPassword = Boolean(req.body?.ssh?.password || req.body?.password) && (
+      (req.method === 'POST' && (req.path === '/api/sparks' || /^\/api\/sparks\/[^/]+\/test$/.test(req.path))) ||
+      (req.method === 'PATCH' && /^\/api\/sparks\/[^/]+$/.test(req.path)) ||
+      (req.method === 'PUT' && /^\/api\/sparks\/[^/]+\/password$/.test(req.path))
+    );
+    const writesApiKey = req.method === 'PUT' && /^\/api\/sparks\/[^/]+\/llm-ports\/[^/]+\/api-key$/.test(req.path) && Boolean(req.body?.apiKey);
+    if (writesPassword || writesApiKey) {
+      try { await prepareCredentials(); }
+      catch (error) { return res.status(503).json({ error: error.message }); }
+    }
+  }
+  next();
+});
+app.get("/api/runtime", (_req, res) => res.json({ desktop, version: "1.8.9-desktop.1", remoteOnly: desktop }));
 
 app.get("/api/health", (_req, res) => {
   res.json(inspectHealth(process.env.BIND_HOST || "127.0.0.1"));
@@ -337,6 +370,60 @@ registerLlmTokenTotalsRoute(app, llmTokenLedger);
 // Never return SSH passwords in any response
 app.get("/api/sparks", (_req, res) => {
   res.json({ sparks: registry.publicSparks });
+});
+
+let fabricCheck = null;
+app.post("/api/clusters/discover", async (req, res) => {
+  if (!allowTest(principalKey(req))) return rejectLimited(res, "Too many test requests; try again shortly");
+  if (fabricCheck) return res.status(409).json({ error: "A network check is already running. Try again shortly." });
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.length < 2 || ids.length > 12 || new Set(ids).size !== ids.length || ids.some((id) => typeof id !== "string" || !registry.getSpark(id) || registry.getSpark(id).kind === "host")) {
+    return res.status(400).json({ error: "Select 2–12 saved DGX Spark devices" });
+  }
+  try {
+    fabricCheck = fabricDiscovery(ids.map((id) => registry.getSpark(id)));
+    res.json(await fabricCheck);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  } finally { fabricCheck = null; }
+});
+
+app.get("/api/clusters/benchmark", (_req, res) => res.json({ job: fabricBenchmark.snapshot() }));
+app.post("/api/clusters/benchmark", (req, res) => {
+  if (!allowTest(principalKey(req))) return rejectLimited(res, "Too many test requests; try again shortly");
+  const { headId, a, b } = req.body || {};
+  const head = typeof headId === "string" && registry.getSpark(headId);
+  const belongs = (id) => {
+    const spark = typeof id === "string" && registry.getSpark(id);
+    return spark && (spark.id === headId || (spark.role === "worker" && spark.workerHeadId === headId));
+  };
+  if (!head || head.role !== "head" || a === b || !belongs(a) || !belongs(b)) {
+    return res.status(400).json({ error: "Select two members of the same saved cluster" });
+  }
+  try { res.status(202).json({ job: fabricBenchmark.start([registry.getSpark(a), registry.getSpark(b)], req.body) }); }
+  catch (error) { res.status(error.status || 500).json({ error: error.message }); }
+});
+app.delete("/api/clusters/benchmark/:id", async (req, res) => {
+  if (fabricBenchmark.snapshot()?.id !== req.params.id) return res.status(404).json({ error: "Network test not found" });
+  res.json({ job: await fabricBenchmark.cancel() });
+});
+
+function applyCluster(config, dissolve = false) {
+  const result = registry.configureCluster(config, dissolve);
+  for (const id of result.changedIds) {
+    stopMonitor(id);
+    startMonitor(registry.getSpark(id));
+  }
+  forceBroadcast();
+  return result;
+}
+app.post("/api/clusters", (req, res) => {
+  try { res.json({ success: true, ...applyCluster(req.body || {}) }); }
+  catch (error) { res.status(error.status || 400).json({ error: error.message }); }
+});
+app.delete("/api/clusters/:headId", (req, res) => {
+  try { res.json({ success: true, ...applyCluster({ previousHeadId: req.params.headId }, true) }); }
+  catch (error) { res.status(error.status || 400).json({ error: error.message }); }
 });
 
 // Ephemeral connectivity test — does not persist or start a monitor
@@ -360,15 +447,18 @@ app.post("/api/sparks/test", async (req, res) => {
       workerNode: Boolean(body.workerNode),
       llmMonitoring: body.llmMonitoring,
       llmPort: resolveLlmPort(body),
+      llmPorts: body.llmPorts,
       comfyPort: resolveComfyPort(body),
       comfyMonitoring: Boolean(body.comfyMonitoring),
       hermesMonitoring: Boolean(body.hermesMonitoring),
       tailscaleMonitoring: Boolean(body.tailscaleMonitoring),
       ssh: {
         host: body.ssh?.host || body.lanIp || "",
-        user: body.ssh?.user || "root",
+        user: body.ssh?.user || (desktop ? "" : "root"),
         auth: body.ssh?.auth === "pass" ? "pass" : "key",
         password: body.ssh?.password,
+        port: body.ssh?.port,
+        identityFile: body.ssh?.identityFile,
       },
     };
     if (!spark.isLocal && !spark.lanIp && !spark.ssh.host) {
@@ -410,7 +500,7 @@ app.patch("/api/sparks/:id", (req, res) => {
   try {
     const body = req.body || {};
     // Only validate host fields if they are being updated
-    if (body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
+    if (body.lanIp != null || body.ssh != null || body.isLocal != null) {
       const existing = registry.getSpark(req.params.id);
       if (!existing) return res.status(404).json({ error: "Spark not found" });
       const merged = {
@@ -562,6 +652,7 @@ app.post("/api/sparks/:id/comfy/cancel", async (req, res) => {
     // Nudge a comfy re-poll so UI updates quickly
     const mon = monitors.get(req.params.id);
     if (mon) void mon._pollDomain?.("comfy");
+    if (!result.ok) return res.status(502).json({ success: false, ...result, error: result.message });
     res.json({ success: result.ok, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1287,7 +1378,7 @@ app.delete("/api/sparks/:id/llm/prefill-bench/:benchId", (req, res) => {
  * Returns 202 { sessionId }; poll GET for deltas; DELETE :sessionId to cancel.
  * Finished runs are archived; GET collection lists history; DELETE collection clears it.
  */
-app.post("/api/sparks/:id/llm/showcase", (req, res) => {
+app.post("/api/sparks/:id/llm/showcase", async (req, res) => {
   const spark = registry.getSpark(req.params.id);
   if (!spark) return res.status(404).json({ error: "Spark not found" });
   if (spark.workerNode) {
@@ -1325,9 +1416,13 @@ app.post("/api/sparks/:id/llm/showcase", (req, res) => {
     modelId = llm?.modelId || null;
   }
 
+  let showcaseTarget;
   try {
+    if (desktop) showcaseTarget = await serviceTargets.acquire(spark, port);
     const result = showcaseManager.start({
       sparkId: spark.id,
+      baseUrl: showcaseTarget ? serviceBaseUrl(showcaseTarget) : undefined,
+      closeTarget: showcaseTarget?.close,
       lanIp: llmProbeHost(spark),
       port,
       modelId,
@@ -1340,6 +1435,7 @@ app.post("/api/sparks/:id/llm/showcase", (req, res) => {
     });
     res.status(202).json(result);
   } catch (err) {
+    showcaseTarget?.close();
     const status = err.status || 500;
     res.status(status).json({ error: err.message });
   }
@@ -1611,7 +1707,9 @@ app.get("*splat", (_req, res) => {
 const wss = new WebSocketServer({
   server,
   path: "/ws",
-  verifyClient: ({ req }, done) => done(authorizeUpgrade(req)),
+  verifyClient: ({ req }, done) => done(desktop
+    ? authorizeDesktopRequest(req, { ...credentials(), websocket: true })
+    : authorizeUpgrade(req)),
 });
 wss.on("connection", (ws) => {
   console.log("[ws] client connected");
@@ -1698,87 +1796,84 @@ function restartBroadcast() {
   startBroadcast();
 }
 
-// ─── Start ───────────────────────────────────────────────
-loadSettings();
-const startupPreflight = inspectStartupPreflight(BIND_HOST);
-logStartupPreflight(startupPreflight, BIND_HOST, PORT);
-
-if (!startupPreflight.fatal) {
-  startBroadcast();
-  server.listen(PORT, BIND_HOST, () => {
-    console.log(`[sparkDash] server listening on http://${BIND_HOST}:${PORT}`);
-    console.log(`[sparkDash] WebSocket endpoint ws://${BIND_HOST}:${PORT}/ws`);
-    const remote = requireRemoteAuth(BIND_HOST);
-    const tokenConfigured = Boolean(configuredToken());
-    console.log(`[sparkDash] bind=${BIND_HOST} auth=${tokenConfigured ? "bearer" : remote ? "required-missing" : "loopback-open"}`);
-    if (remote && !tokenConfigured) {
-      console.warn("[sparkDash] WARNING: remote bind without SPARKDASH_TOKEN — mutations and telemetry will fail closed until a token is set.");
+// The worker owns one backend per process. Importing this module never listens.
+let startPromise;
+let stopPromise;
+function start() {
+  if (startPromise) return startPromise;
+  startPromise = (async () => {
+    loadSettings();
+    const preflight = inspectStartupPreflight(BIND_HOST);
+    logStartupPreflight(preflight, BIND_HOST, PORT);
+    if (preflight.fatal) throw new Error(preflight.errors.join("; "));
+    if (desktop && !configuredToken()) throw new Error("Desktop authentication is required");
+    if (desktop && registry.sparks.some((spark) => spark.isLocal)) {
+      throw new Error("Local nodes cannot run in the Mac app. Update the imported configuration to remote SSH targets.");
     }
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(PORT, BIND_HOST, () => {
+        server.removeListener("error", reject);
+        resolve();
+      });
+    });
+    origin = `http://${BIND_HOST}:${server.address().port}`;
+    console.log(`[sparkDash] server listening on ${origin}`);
+    startBroadcast();
     startAllMonitors();
     fleetEnergyRuntime.start();
     llmTokenRuntime.start();
-  });
-} else {
-  process.exitCode = 1;
+    return { origin };
+  })();
+  return startPromise;
 }
 
-// ─── Graceful shutdown ─────────────────────────────────
-let _shuttingDown = false;
-async function shutdown(signal) {
-  if (_shuttingDown) return;
-  _shuttingDown = true;
-  console.log(`[sparkDash] ${signal} received, shutting down…`);
-  try {
-    // Finalize in-flight benches before the process dies so clients polling
-    // GET /llm/bench/:id do not hit "Benchmark not found" after --watch reload.
-    decodeBenchManager.interruptAll(
-      "Interrupted — server restarted while the benchmark was running"
-    );
-    prefillBenchManager.interruptAll(
-      "Interrupted — server restarted while the benchmark was running"
-    );
-  } catch (err) {
-    console.error("[sparkDash] failed to finalize benchmarks:", err.message);
-  }
-  try {
-    llmDaily.flush();
-  } catch (err) {
-    console.error("[sparkDash] failed to flush LLM daily history:", err.message);
-  }
-  llmTokenRuntime.stop();
-  const energyPersistenceSucceeded = fleetEnergyRuntime.stop();
-  const streamAgentClosedGracefully = await closeLlmStreamAgent();
-  if (!streamAgentClosedGracefully) {
-    console.warn("[sparkDash] LLM dispatcher close timed out; destroyed open sockets");
-  }
-  try {
-    if (broadcastTimer) {
-      clearInterval(broadcastTimer);
-      broadcastTimer = null;
-    }
-    for (const m of monitors.values()) m.stop();
+function stop(reason = "App stopped") {
+  if (stopPromise) return stopPromise;
+  stopPromise = (async () => {
+    console.log(`[sparkDash] ${reason}, shutting down…`);
+    if (broadcastTimer) clearInterval(broadcastTimer);
+    for (const monitor of monitors.values()) monitor.stop();
     monitors.clear();
-  } catch (err) {
-    console.error("[sparkDash] error during shutdown:", err.message);
-  }
-  // Tell WS clients the server is going away, then close the server.
-  try {
-    wss.clients.forEach((c) => {
-      try {
-        c.close(1001, "server shutting down");
-      } catch {
-        /* ignore */
-      }
-    });
-  } catch {
-    /* ignore */
-  }
-  wss.close();
-  server.close(() => process.exit(energyPersistenceSucceeded ? 0 : 1));
-  // Safety net: if server.close hangs (lingering keep-alive), force-exit.
-  setTimeout(() => process.exit(1), 3000).unref();
+    decodeBenchManager.interruptAll(`Interrupted — ${reason}`);
+    prefillBenchManager.interruptAll(`Interrupted — ${reason}`);
+    showcaseManager.stop(reason);
+    serviceTargets.stop();
+    await fabricBenchmark.stop();
+    await closeSshConnections();
+    llmDaily.flush();
+    llmTokenRuntime.stop();
+    const persisted = fleetEnergyRuntime.stop();
+    await closeLlmStreamAgent();
+    for (const client of wss.clients) client.terminate();
+    wss.close();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    return { persisted };
+  })();
+  return stopPromise;
 }
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+return { app, server, wss, start, stop };
+}
 
-export { app, server, wss };
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+if (isMain) {
+  const backend = createBackend();
+  const shutdown = async (signal) => {
+    const timeout = setTimeout(() => process.exit(1), 5000);
+    timeout.unref();
+    try {
+      const result = await backend.stop(signal);
+      process.exit(result.persisted ? 0 : 1);
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  };
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  backend.start().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

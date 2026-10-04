@@ -179,6 +179,17 @@ export function isValidSparkId(id) {
  * @param {{ lanIp?: string, ssh?: { host?: string, user?: string } }} body
  */
 export function validateSparkTarget(body) {
+  if (process.env.SPARKDASH_DESKTOP === "1" && body?.isLocal) {
+    return "Desktop nodes must use remote SSH";
+  }
+  const port = body?.ssh?.port;
+  if (port != null && (!Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535)) {
+    return "SSH port must be an integer between 1 and 65535";
+  }
+  const identity = body?.ssh?.identityFile;
+  if (identity != null && (typeof identity !== "string" || identity.includes("\0") || (identity && !identity.startsWith("/")))) {
+    return "SSH identity must be an absolute file path";
+  }
   const lanIp = body?.lanIp || "";
   const sshHost = body?.ssh?.host || "";
   const target = sshHost || lanIp;

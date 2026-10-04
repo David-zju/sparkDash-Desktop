@@ -75,6 +75,9 @@ export function loadSettings() {
   try {
     const raw = fs.readFileSync(SETTINGS_PATH, "utf-8");
     const parsed = JSON.parse(raw);
+    if (process.env.SPARKDASH_DESKTOP === "1" && (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))) {
+      throw new Error('Settings must be a JSON object');
+    }
     _settings = _clampSettings({ ...DEFAULTS, ...parsed });
   } catch (err) {
     if (err.code === "ENOENT") {
@@ -82,6 +85,7 @@ export function loadSettings() {
       saveSettings();
     } else {
       console.error("[settings] Failed to load settings.json:", err.message);
+      if (process.env.SPARKDASH_DESKTOP === "1") throw new Error(`Cannot read saved settings. Original file preserved: ${err.message}`);
       _settings = { ...DEFAULTS };
     }
   }
@@ -96,6 +100,7 @@ export function saveSettings() {
     atomicWrite(SETTINGS_PATH, JSON.stringify(_settings, null, 2) + "\n", 0o644);
   } catch (err) {
     console.error("[settings] Failed to save settings.json:", err.message);
+    throw err;
   }
 }
 
@@ -110,8 +115,10 @@ export function getSettings() {
  * @returns {typeof DEFAULTS}
  */
 export function updateSettings(patch) {
+  const previous = _settings;
   const merged = _clampSettings({ ..._settings, ...patch });
   _settings = merged;
-  saveSettings();
+  try { saveSettings(); }
+  catch (error) { _settings = previous; throw error; }
   return { ..._settings };
 }

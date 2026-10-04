@@ -3,6 +3,7 @@ import { SPARKS_JSON_PATH, LLM_PORT } from "../config.js";
 import { loadSecrets, saveSecrets } from "../secretsStore.js";
 import { atomicWrite } from "../util/atomicWrite.js";
 import { isValidSparkId } from "../validate.js";
+import { planClusterUpdate } from "./clusterConfig.js";
 
 /**
  * SparkRegistry — loads, persists, and emits change events for the Spark list.
@@ -63,6 +64,16 @@ export class SparkRegistry {
   }
 
   // ─── CRUD ───────────────────────────────────────────────
+  configureCluster(config, dissolve = false) {
+    const planned = planClusterUpdate(this._sparks, config, dissolve);
+    const changedIds = planned.filter((s, i) => s !== this._sparks[i]).map((s) => s.id);
+    const next = planned.map((s) => this._normalizeConfig(s));
+    this._save(next);
+    this._sparks = next;
+    this._emit("cluster", null);
+    return { sparks: this.publicSparks, changedIds };
+  }
+
   /** Add a new Spark. Throws if ID already exists or is malformed. */
   addSpark(config) {
     if (!config.id) throw new Error("Spark config must have an 'id'");
@@ -239,6 +250,7 @@ export class SparkRegistry {
       this._llmApiKeys = loaded.llmApiKeys || new Map();
     } catch (err) {
       console.error("[SparkRegistry] secrets load failed:", err.message);
+      if (process.env.SPARKDASH_DESKTOP === "1") throw err;
       this._passwords = new Map();
       this._llmApiKeys = new Map();
     }
@@ -246,6 +258,11 @@ export class SparkRegistry {
     try {
       const raw = fs.readFileSync(SPARKS_JSON_PATH, "utf-8");
       const data = JSON.parse(raw);
+      if (process.env.SPARKDASH_DESKTOP === "1" && (!Array.isArray(data?.sparks) ||
+        data.sparks.some((spark) => !spark || !isValidSparkId(spark.id)) ||
+        new Set(data.sparks.map((spark) => spark.id)).size !== data.sparks.length)) {
+        throw new Error('Device list must contain unique valid device IDs');
+      }
       const loaded = data.sparks || [];
       this._sparks = [];
       let migratedSecrets = false;
@@ -271,6 +288,7 @@ export class SparkRegistry {
         this._save();
       } else {
         console.error("[SparkRegistry] Failed to load sparks.json:", err.message);
+        if (process.env.SPARKDASH_DESKTOP === "1") throw new Error(`Cannot read the saved device configuration. Original file preserved: ${err.message}`);
         this._sparks = [];
       }
     }
@@ -575,8 +593,10 @@ export class SparkRegistry {
     const sshIn = config.ssh || {};
     const ssh = {
       host: sshIn.host || "",
-      user: sshIn.user || "root",
+      user: sshIn.user || (process.env.SPARKDASH_DESKTOP === "1" ? "" : "root"),
       auth: sshIn.auth === "pass" ? "pass" : "key",
+      ...(sshIn.port != null ? { port: Number(sshIn.port) } : {}),
+      ...(sshIn.identityFile ? { identityFile: String(sshIn.identityFile) } : {}),
     };
     const llmPorts = this._normalizeLlmPorts(config.llmPorts ?? config.llmPort);
     const role = this._normalizeRole(config);
@@ -597,6 +617,7 @@ export class SparkRegistry {
       ssh,
       llmPorts,
       role,
+      clusterName: role === "head" && typeof config.clusterName === "string" ? config.clusterName.trim().slice(0, 80) || null : null,
       /** When true, this Spark is an LLM worker — no local API card / probe. */
       workerNode: isWorker,
       /** Optional cluster/model name for overview when role is worker. */

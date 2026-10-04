@@ -1281,6 +1281,7 @@ export class SystemCollector {
 
       return {
         usage,
+        usageAvailable: totalDiff > 0 && usedDiff >= 0,
         temperature: this._parseSensorTemp(tempOut),
         draw: Math.round(draw * 10) / 10,
         tdp: Math.round(tdp),
@@ -1546,7 +1547,9 @@ export class SystemCollector {
         available: Math.round(availKB / 1024),
         percentage,
         oomRisk,
-        bandwidth: { current: 0, peak: 400 },
+        bandwidth: { current: null, peak: 400 },
+        attribution: "estimated",
+        memoryType: "LPDDR5X unified memory",
       };
     } catch (err) {
       console.error(`[SystemCollector] Remote Unified Memory error for ${this.spark.id}:`, err.message);

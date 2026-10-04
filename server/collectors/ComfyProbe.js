@@ -13,6 +13,7 @@
 import { COMFY_PROBE_TIMEOUT_MS, COMFY_PORT } from "../config.js";
 import { llmProbeHost } from "./llmHost.js";
 import { ComfyProgressSocket } from "./ComfyProgressSocket.js";
+import { ServiceConnection, serviceBaseUrl } from "./ServiceTargets.js";
 
 /**
  * @param {unknown} n
@@ -232,6 +233,7 @@ export class ComfyProbe {
    * @param {number} [port]
    */
   constructor(spark, port = COMFY_PORT) {
+    this._connection = process.env.SPARKDASH_DESKTOP === "1" ? new ServiceConnection() : null;
     this.spark = spark;
     this.port = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : COMFY_PORT;
     this.baseUrl = `http://${llmProbeHost(spark)}:${this.port}`;
@@ -257,6 +259,7 @@ export class ComfyProbe {
 
   /** Tear down WS when monitoring disabled. */
   dispose() {
+    this._connection?.dispose();
     this._progress.close();
   }
 
@@ -265,6 +268,7 @@ export class ComfyProbe {
    * machines. Probe traffic still uses llmProbeHost (loopback when isLocal).
    */
   openUrl() {
+    if (this._connection?.lease) return serviceBaseUrl(this._connection.lease);
     const lan =
       this.spark?.lanIp != null ? String(this.spark.lanIp).trim() : "";
     const sshHost =
@@ -283,6 +287,11 @@ export class ComfyProbe {
    */
   async probe() {
     try {
+      if (this._connection) {
+        const target = await this._connection.get(this.spark, this.port, 'comfy');
+        this.baseUrl = serviceBaseUrl(target);
+        this._progress.setTarget({ isLocal: false, lanIp: target.host }, target.port);
+      }
       const signal = AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS);
       const [statsRes, queueRes] = await Promise.all([
         fetch(`${this.baseUrl}/system_stats`, { signal }),
@@ -388,6 +397,7 @@ export class ComfyProbe {
         error: null,
       };
     } catch (err) {
+      this._connection?.invalidate();
       this.error = err?.message || String(err);
       this._progress.disconnect();
       return this._default();

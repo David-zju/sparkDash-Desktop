@@ -4,6 +4,7 @@
 import { COMFY_PORT, COMFY_PROBE_TIMEOUT_MS } from "../config.js";
 import { isAllowedTargetHost } from "../validate.js";
 import { llmProbeHost } from "./llmHost.js";
+import { serviceTargets, serviceBaseUrl } from "./ServiceTargets.js";
 
 /**
  * @param {object} spark
@@ -34,7 +35,13 @@ export async function comfyCancelJob(spark, promptId, port) {
   if (!promptId || typeof promptId !== "string") {
     return { ok: false, method: "none", message: "promptId required" };
   }
-  const root = baseUrl(spark, port);
+  const lease = process.env.SPARKDASH_DESKTOP === "1"
+    ? await serviceTargets.acquire(spark, port || spark.comfyPort || COMFY_PORT, 'comfy') : null;
+  try { return await cancelAtRoot(lease ? serviceBaseUrl(lease) : baseUrl(spark, port), promptId); }
+  finally { lease?.close(); }
+}
+
+async function cancelAtRoot(root, promptId) {
   const signal = AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS);
 
   // 1) Modern jobs API
@@ -43,52 +50,42 @@ export async function comfyCancelJob(spark, promptId, port) {
       method: "POST",
       signal,
     });
-    if (res.ok || res.status === 200 || res.status === 204) {
+    if (res.ok) {
       return { ok: true, method: "api_jobs_cancel", message: "cancelled" };
     }
-    // 404 → try legacy paths
-    if (res.status !== 404) {
+    // Only an unsupported endpoint permits a legacy fallback. Authentication,
+    // server, or transport errors are not permission to issue another mutation.
+    if (res.status !== 404 && res.status !== 405) {
       const text = await res.text().catch(() => "");
-      // still try legacy below if not clearly ok
-      if (res.status >= 500) {
-        return {
-          ok: false,
-          method: "api_jobs_cancel",
-          message: `HTTP ${res.status} ${text.slice(0, 120)}`,
-        };
-      }
-    }
-  } catch {
-    /* fall through */
-  }
-
-  // 2) Interrupt running (targeted)
-  try {
-    await fetch(`${root}/interrupt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt_id: promptId }),
-      signal: AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS),
-    });
-  } catch {
-    /* ignore */
-  }
-
-  // 3) Delete from pending queue
-  try {
-    const res = await fetch(`${root}/queue`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delete: [promptId] }),
-      signal: AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS),
-    });
-    if (res.ok) {
-      return { ok: true, method: "queue_delete", message: "removed from queue / interrupted" };
+      return { ok: false, method: "api_jobs_cancel", message: `HTTP ${res.status} ${text.slice(0, 120)}` };
     }
   } catch (err) {
-    return { ok: false, method: "queue_delete", message: err.message };
+    return { ok: false, method: "api_jobs_cancel", message: `Cancellation could not be confirmed: ${err.message}` };
   }
 
-  // Interrupt alone may have worked for running jobs
-  return { ok: true, method: "interrupt", message: "interrupt requested" };
+  // Legacy interrupt can affect the current running job regardless of its
+  // request body. Never call it when deleting a pending or disappeared job.
+  try {
+    const response = await fetch(`${root}/queue`, { signal: AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS) });
+    if (!response.ok) return { ok: false, method: "queue_check", message: `HTTP ${response.status}` };
+    const queue = await response.json();
+    const contains = (entries) => Array.isArray(entries) && entries.some((entry) => Array.isArray(entry) && entry[1] === promptId);
+    const pending = contains(queue.queue_pending);
+    const running = contains(queue.queue_running);
+    if (!pending && !running) return { ok: false, method: "queue_check", message: "Job is no longer in the queue; no cancellation was sent" };
+    if (!pending && queue.queue_running.length !== 1) return { ok: false, method: "queue_check", message: "Legacy interrupt cannot safely target one of multiple running jobs" };
+    const endpoint = pending ? "queue" : "interrupt";
+    const res = await fetch(`${root}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pending ? { delete: [promptId] } : { prompt_id: promptId }),
+      signal: AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS),
+    });
+    return {
+      ok: res.ok, method: pending ? "queue_delete" : "interrupt",
+      message: res.ok ? (pending ? "queue deletion requested" : "interrupt requested; awaiting queue update") : `HTTP ${res.status}`,
+    };
+  } catch (err) {
+    return { ok: false, method: "legacy_cancel", message: `Cancellation could not be confirmed: ${err.message}` };
+  }
 }

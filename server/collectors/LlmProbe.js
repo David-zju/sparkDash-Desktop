@@ -7,6 +7,7 @@
 import { LLM_PROBE_TIMEOUT_MS } from "../config.js";
 import { classifyHostScope } from "../validate.js";
 import { llmProbeHost } from "./llmHost.js";
+import { ServiceConnection, serviceBaseUrl } from "./ServiceTargets.js";
 
 const FAIL_RESET_THRESHOLD = 3;
 const REDETECT_INTERVAL_MS = 60_000;
@@ -62,6 +63,7 @@ function applyModelRef(probe, raw) {
 export class LlmProbe {
   constructor(spark, port = 8888) {
     this.spark = spark;
+    this._connection = process.env.SPARKDASH_DESKTOP === "1" ? new ServiceConnection() : null;
     this.port = port;
     this.baseUrl = `http://${llmProbeHost(spark)}:${port}`;
 
@@ -206,6 +208,11 @@ export class LlmProbe {
   /** Probe the LLM server and return a snapshot. */
   async probe() {
     try {
+      if (this._connection) {
+        const target = await this._connection.get(this.spark, this.port);
+        const base = serviceBaseUrl(target);
+        if (base !== this.baseUrl) { this._resetDetection(); this.baseUrl = base; }
+      }
       const shouldDetect =
         this.serverIsOpenAI === null ||
         Date.now() - this._lastDetectAt > REDETECT_INTERVAL_MS;
@@ -239,6 +246,7 @@ export class LlmProbe {
   }
 
   _noteFailure(message) {
+    this._connection?.invalidate();
     this.error = message;
     this._consecutiveFailures += 1;
     if (this._consecutiveFailures >= FAIL_RESET_THRESHOLD) {
@@ -246,7 +254,10 @@ export class LlmProbe {
     }
   }
 
+  dispose() { this._connection?.dispose(); }
+
   _resetDetection() {
+    this._tensorFoldLiveRatesAvailable = false;
     this.serverIsOpenAI = null;
     this.backendType = null;
     this.authOpen = null;
@@ -902,6 +913,9 @@ export class LlmProbe {
    */
   _applyTensorFoldHealth(data, dtSec) {
     const health = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+    this._tensorFoldLiveRatesAvailable = typeof health.prompt_tokens_total === 'number' &&
+      Number.isFinite(health.prompt_tokens_total) && typeof health.completion_tokens_total === 'number' &&
+      Number.isFinite(health.completion_tokens_total);
     this._applyExl3Health(health, dtSec);
     // TensorFold 0.5.0 (cuda/health.py) publishes cumulative cached prompt tokens
     // alongside the EXL3-style counters; older builds omit it (stays null).
@@ -1732,6 +1746,7 @@ export class LlmProbe {
     const metricsLive = this.serverIsOpenAI !== null && this.authOpen !== false;
     return {
       available: metricsLive,
+      liveRatesAvailable: this.backendType !== 'tensorfold' || this._tensorFoldLiveRatesAvailable === true,
       backend: this.backendType,
       modelId: this.modelId || null,
       modelPath: this.modelPath || null,

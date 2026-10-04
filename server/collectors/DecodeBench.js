@@ -477,13 +477,8 @@ export class DecodeBenchManager {
     if (!hist.length) return null;
     if (port != null) {
       const p = Number(port);
-      const match = hist.find(
-        (j) => j.config?.port === p && Array.isArray(j.results) && j.results.length > 0
-      );
-      if (match) return match;
-      // Any finished job on this port (even empty results)
-      const anyPort = hist.find((j) => j.config?.port === p);
-      if (anyPort) return anyPort;
+      // A newer failure/interruption must not be hidden by an older success.
+      return hist.find((j) => j.config?.port === p) || null;
     }
     return hist[0] || null;
   }

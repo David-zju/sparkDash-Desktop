@@ -239,7 +239,7 @@ test("update() auto-repairs a broken launcher via uv pip install then retries", 
   assert.equal(res.version, "0.20.0");
   assert.equal(calls.length, 4);
   assert.match(calls[1], /pip install -e \./);
-  assert.match(calls[1], /VIRTUAL_ENV='\/home\/zurih\/\.hermes\/hermes-agent\/venv'/);
+  assert.match(calls[1], /VIRTUAL_ENV="\$HOME\/\.hermes\/hermes-agent\/venv"/);
 });
 
 test("pendingCommits() parses the git probe output", async () => {

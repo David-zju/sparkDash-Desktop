@@ -60,7 +60,7 @@ test("a new WebSocket client receives its initial snapshot without rebroadcastin
   await Promise.race([
     new Promise((resolve) => {
       const check = () =>
-        output.includes("server listening") ? resolve() : setTimeout(check, 10);
+        output.includes("server listening") ? resolve() : setTimeout(check, 10).unref();
       check();
     }),
     new Promise((_, reject) =>

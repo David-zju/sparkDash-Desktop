@@ -172,6 +172,14 @@ export class ShowcaseManager {
     this._ensureHeartbeatWatch();
   }
 
+  stop(reason = "App stopped") {
+    if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+    this._heartbeatTimer = null;
+    for (const [sparkId, sessionId] of this.activeBySpark) {
+      this.cancel(sparkId, sessionId, reason);
+    }
+  }
+
   _loadHistory() {
     try {
       if (!fs.existsSync(this.historyPath)) return;
@@ -430,6 +438,8 @@ export class ShowcaseManager {
       _lastTouchAt: now,
       _contentCap: cap,
       _lanIp: lanIp,
+      _baseUrl: opts.baseUrl,
+      _closeTarget: opts.closeTarget,
       _apiKey: apiKey != null && String(apiKey).trim() ? String(apiKey).trim() : null,
       _sentContentLengths: /** @type {number[]} */ (prompts.map(() => 0)),
       _sentReasoningLengths: /** @type {number[]} */ (prompts.map(() => 0)),
@@ -438,7 +448,7 @@ export class ShowcaseManager {
     this.sessions.set(sessionId, session);
     this.activeBySpark.set(sparkId, sessionId);
 
-    this._runSession(session).catch(() => {
+    this._runSession(session).finally(() => session._closeTarget?.()).catch(() => {
       /* errors recorded on session */
     });
 
@@ -650,7 +660,7 @@ export class ShowcaseManager {
   }
 
   async _runSession(session) {
-    const baseUrl = `http://${session._lanIp}:${session.port}`;
+    const baseUrl = session._baseUrl || `http://${session._lanIp}:${session.port}`;
     const url = `${baseUrl}/v1/chat/completions`;
 
     const ratePollAbort = new AbortController();

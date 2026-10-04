@@ -629,6 +629,7 @@ test("integration splits energy and coverage at UTC minute boundaries", (t) => {
   const filePath = path.join(dir, "fleet-energy.json");
   const minute = Date.UTC(2026, 7, 23, 12, 0, 0);
   const tracker = new FleetEnergyTracker({
+    now: () => minute + 61_000,
     filePath,
     load: false,
     setIntervalFn: () => 1,

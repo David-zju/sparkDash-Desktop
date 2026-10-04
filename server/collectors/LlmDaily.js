@@ -143,6 +143,7 @@ export class LlmDailyStore {
    * @param {Date} [now]
    */
   record(sparkId, port, metrics, now = new Date()) {
+    if (metrics?.liveRatesAvailable === false) return;
     if (!sparkId || !Number.isInteger(port)) return;
     if (!metrics || metrics.available === false) return;
 

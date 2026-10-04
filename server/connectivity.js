@@ -1,7 +1,7 @@
 import { SystemCollector } from "./collectors/SystemCollector.js";
 import { HermesProbe } from "./collectors/HermesProbe.js";
 import { TailscaleProbe } from "./collectors/TailscaleProbe.js";
-import { comfyTest, llmTest, sshTest } from "./collectors/ssh.js";
+import { comfyTest, llmTestAll, sshTest } from "./collectors/ssh.js";
 
 const RECOVERY = {
   host: {
@@ -74,14 +74,17 @@ export async function testSparkConnectivity(spark, { llmPort, comfyPort }) {
       return { ok: true, message: "Host metrics are readable" };
     }).then((result) => ["host", result]),
     enabled.has("llm")
-      ? checked(() => llmTest(spark, llmPort)).then((result) => ["llm", result])
+      ? checked(async () => {
+          const result = await llmTestAll({ ...spark, llmPorts: spark.llmPorts?.length ? spark.llmPorts : [llmPort] });
+          return { ...result, message: result.ports.map((p) => `${p.port}: ${p.message}`).join('; ') };
+        }).then((result) => ["llm", result])
       : Promise.resolve(["llm", { ok: true, message: "Disabled" }]),
     enabled.has("comfy")
       ? checked(() => comfyTest(spark, comfyPort)).then((result) => ["comfy", result])
       : Promise.resolve(["comfy", { ok: true, message: "Disabled" }]),
     enabled.has("hermes")
       ? checked(async () => {
-          const result = await new HermesProbe(spark).check();
+          const result = await new HermesProbe(spark).status();
           return {
             ok: result.installed === true && !result.error,
             message: result.error || (result.installed ? `Installed${result.version ? ` (${result.version})` : ""}` : "Hermes Agent not found"),

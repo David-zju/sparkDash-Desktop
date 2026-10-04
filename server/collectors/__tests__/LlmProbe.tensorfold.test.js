@@ -61,6 +61,7 @@ test("probe: tensorfold CUDA {ok:true} health → labeled, 0 tok/s, no crash", a
   };
   const snap = await probe.probe();
   assert.equal(snap.backend, "tensorfold");
+  assert.equal(snap.liveRatesAvailable, false);
   assert.equal(snap.modelId, "Qwen3.8-Flash-Next-MLX-4bit-MTP");
   assert.equal(snap.generationTps, 0);
   assert.equal(snap.prefillTps, 0);

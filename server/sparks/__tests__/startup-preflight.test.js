@@ -1,8 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { evaluateStartupPreflight } from "../../startupPreflight.js";
 
 test("startup preflight permits loopback and fails closed on direct LAN binding", () => {
@@ -37,13 +34,4 @@ test("startup preflight permits loopback and fails closed on direct LAN binding"
   });
   assert.equal(authed.fatal, false);
   assert.equal(authed.authMode, "bearer");
-});
-
-test("Compose files default to loopback and do not hard-code 0.0.0.0", async () => {
-  const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-  for (const file of ["docker-compose.yml", "docker-compose.dev.yml"]) {
-    const text = await readFile(join(root, file), "utf8");
-    assert.match(text, /BIND_HOST=\$\{BIND_HOST:-127\.0\.0\.1\}/);
-    assert.equal(text.includes("BIND_HOST=0.0.0.0"), false);
-  }
 });

@@ -23,7 +23,7 @@ export function evaluateStartupPreflight(input) {
     }
   }
   if (!input.configWritable) errors.push("Config directory is not writable; fix the config volume ownership/permissions.");
-  if (!input.secretsKey?.present) warnings.push("No secrets key exists yet; one will be created when the secrets store is first used. Back it up with the config directory.");
+  if (!input.secretsKey?.present && !input.secretsKey?.onDemand) warnings.push("No secrets key exists yet; one will be created when the secrets store is first used. Back it up with the config directory.");
   if (!input.sshIdentity?.configured) warnings.push("No SSH identity is configured; remote key-auth units will be unavailable.");
   if (input.sshIdentity?.configured && input.sshIdentity.safePermissions === false) {
     warnings.push("SSH identity permissions are too open; set the private key to mode 600.");
@@ -62,6 +62,7 @@ export function inspectStartupPreflight(bindHost) {
     allowOpenRemote: allowOpenRemote(),
     configWritable: pathWritable(configDir),
     secretsKey: {
+      onDemand: process.env.SPARKDASH_DESKTOP === "1",
       present: Boolean(process.env.SPARKDASH_SECRETS_KEY) || fs.existsSync(keyFile),
       source: process.env.SPARKDASH_SECRETS_KEY ? "environment" : "file",
     },
@@ -71,7 +72,8 @@ export function inspectStartupPreflight(bindHost) {
       safePermissions: identityMode == null ? null : (identityMode & 0o077) === 0,
     },
     localCollectors: {
-      available: fs.existsSync(path.join(HOST_PATHS.PROC, "meminfo")) && fs.existsSync(HOST_PATHS.SYS),
+      available: process.env.SPARKDASH_DESKTOP === "1" ||
+        (fs.existsSync(path.join(HOST_PATHS.PROC, "meminfo")) && fs.existsSync(HOST_PATHS.SYS)),
     },
   });
 }

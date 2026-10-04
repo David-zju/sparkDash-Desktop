@@ -58,6 +58,10 @@ function resolveKey() {
     return _cachedKey;
   }
 
+  if (process.env.SPARKDASH_DESKTOP === "1") {
+    throw new Error("Desktop credentials require the Keychain-protected encryption key");
+  }
+
   if (fs.existsSync(SECRETS_KEY_PATH)) {
     try {
       const raw = fs.readFileSync(SECRETS_KEY_PATH, "utf8").trim();
@@ -132,9 +136,19 @@ export function loadSecrets() {
   }
 
   try {
-    const key = resolveKey();
     const raw = fs.readFileSync(SPARKS_SECRETS_PATH, "utf8");
     const data = JSON.parse(raw);
+    if (process.env.SPARKDASH_DESKTOP === "1") {
+      const validMap = (value) => value && typeof value === 'object' && !Array.isArray(value) &&
+        Object.entries(value).every(([id, blob]) => id && typeof blob === 'string' && blob.length > 0);
+      if (!data || ![1, 2].includes(data.version) || !validMap(data.secrets) ||
+        (data.version === 2 && !validMap(data.llmApiKeys))) {
+        throw new Error('Saved credential file has an unsupported or invalid format. Original file preserved');
+      }
+    }
+    // An empty store has nothing to decrypt and does not need Keychain access.
+    const hasCiphertext = Object.keys(data?.secrets || {}).length > 0 || Object.keys(data?.llmApiKeys || {}).length > 0;
+    const key = hasCiphertext ? resolveKey() : null;
     const entries = data?.secrets || {};
     if (typeof entries === "object" && entries !== null) {
       let failed = 0;
@@ -154,6 +168,7 @@ export function loadSecrets() {
         console.log(`[secretsStore] Loaded ${passwords.size} SSH password(s) from encrypted store`);
       }
       if (failed > 0) {
+        if (process.env.SPARKDASH_DESKTOP === "1") throw new Error('Cannot decrypt saved SSH credentials; restore the original Keychain-protected key');
         console.warn(
           `[secretsStore] ${failed} password(s) could not be decrypted — re-enter via Edit Spark`
         );
@@ -169,7 +184,10 @@ export function loadSecrets() {
         try {
           const json = decrypt(blob, key);
           const parsed = JSON.parse(json);
-          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            if (process.env.SPARKDASH_DESKTOP === "1") throw new Error('Invalid API key bundle');
+            continue;
+          }
           /** @type {Record<string, string>} */
           const ports = {};
           for (const [port, apiKey] of Object.entries(parsed)) {
@@ -189,12 +207,14 @@ export function loadSecrets() {
         console.log(`[secretsStore] Loaded ${portCount} LLM API key(s) from encrypted store`);
       }
       if (failed > 0) {
+        if (process.env.SPARKDASH_DESKTOP === "1") throw new Error('Cannot decrypt saved LLM credentials; restore the original Keychain-protected key');
         console.warn(
           `[secretsStore] ${failed} LLM API key bundle(s) could not be decrypted — re-enter via LLM Settings`
         );
       }
     }
   } catch (err) {
+    if (process.env.SPARKDASH_DESKTOP === "1") throw err;
     console.error(`[secretsStore] Failed to load secrets: ${err.message}`);
   }
 
@@ -259,7 +279,7 @@ export function saveSecrets(passwords, llmApiKeys = new Map()) {
 
   const payload =
     JSON.stringify({ version: 2, secrets, llmApiKeys: llmOut }, null, 2) + "\n";
-  atomicWrite(SPARKS_SECRETS_PATH, payload, 0o644);
+  atomicWrite(SPARKS_SECRETS_PATH, payload, 0o600);
   const keyCount = Object.keys(llmOut).length;
   console.log(
     `[secretsStore] Saved ${Object.keys(secrets).length} SSH password(s)` +

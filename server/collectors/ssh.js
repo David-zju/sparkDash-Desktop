@@ -21,6 +21,21 @@ import { llmProbeHost } from "./llmHost.js";
 // checking PATH entries directly is faster and avoids spawning a shell.
 let _sshpassAvailable = null;
 const _multiplexStates = new Map();
+const _sshChildren = new Set();
+const _masters = new Map();
+let _closing = false;
+
+export async function closeSshConnections() {
+  _closing = true;
+  for (const child of _sshChildren) child.kill('SIGTERM');
+  await Promise.allSettled([..._masters.values()].map(({ socket, remote, port }) => new Promise((resolve) => {
+    execFile(process.env.SPARKDASH_DESKTOP === '1' ? '/usr/bin/ssh' : 'ssh',
+      ['-S', socket, '-O', 'exit', '-p', String(port), '--', remote], { timeout: 2000 }, () => resolve());
+  })));
+  _masters.clear();
+  _multiplexStates.clear();
+}
+
 // Keep the private directory short even on macOS, where TMPDIR can already
 // consume most of a Unix socket's 104-byte path limit.
 const _controlDir = fs.mkdtempSync("/tmp/sparkdash-ssh-");
@@ -50,8 +65,8 @@ export function sshMultiplexConfig(spark, targetHost, user, auth, password) {
   if (persistSeconds === 0) return null;
 
   ensureControlDir();
-  const identityFile = process.env.SSH_IDENTITY_FILE || "default";
-  const isolationKey = [spark.id, user, targetHost, auth || "key", identityFile, password || ""].join("\0");
+  const identityFile = spark.ssh?.identityFile || process.env.SSH_IDENTITY_FILE || "default";
+  const isolationKey = [spark.id, user, targetHost, spark.ssh?.port || 22, auth || "key", identityFile, password || ""].join("\0");
   const digest = crypto
     .createHash("sha256")
     .update(_controlSalt)
@@ -171,16 +186,18 @@ export function sshCommandSpec(spark, opts = {}) {
   const extraSshArgs = Array.isArray(opts.extraSshArgs) ? opts.extraSshArgs : [];
   const remoteArgv = Array.isArray(opts.remoteArgv) ? opts.remoteArgv : [];
   const { host, user, auth, password } = spark?.ssh || {};
+  const desktop = process.env.SPARKDASH_DESKTOP === "1";
+  const sshFile = desktop ? "/usr/bin/ssh" : "ssh";
   const targetHost = host || spark?.lanIp;
 
-  if (!targetHost || !user) {
+  if (!targetHost || (!user && !desktop)) {
     throw new Error(`SSH config missing for ${spark?.id}: host=${targetHost}, user=${user}`);
   }
 
   if (!isAllowedTargetHost(targetHost)) {
     throw new Error(`SSH host not allowed: ${targetHost}`);
   }
-  if (!isValidSshUser(user)) {
+  if (user && !isValidSshUser(user)) {
     throw new Error(`SSH user not allowed: ${user}`);
   }
 
@@ -192,8 +209,14 @@ export function sshCommandSpec(spark, opts = {}) {
     "-o",
     "StrictHostKeyChecking=accept-new",
   ];
+  if (spark.ssh?.port != null) {
+    const port = Number(spark.ssh.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid SSH port");
+    baseOpts.push("-p", String(port));
+  }
+  if (desktop) baseOpts.push("-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2");
 
-  const remote = `${user}@${targetHost}`;
+  const remote = user ? `${user}@${targetHost}` : targetHost;
   const multiplex =
     opts.multiplex === false || !SSH_MULTIPLEX
       ? null
@@ -220,7 +243,16 @@ export function sshCommandSpec(spark, opts = {}) {
     ...(process.env.SSH_AUTH_SOCK ? { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK } : {}),
   };
 
-  if (auth === "pass") {
+  if (auth === "pass" && desktop) {
+    if (!password) throw new Error(`SSH password is missing for ${spark.id}`);
+    const helper = process.env.SPARKDASH_ASKPASS_PATH;
+    if (!helper || !fs.existsSync(helper)) throw new Error("The bundled SSH password helper is missing");
+    file = sshFile;
+    args = [...baseOpts, ...controlOpts, "-o", "BatchMode=no", "-o", "NumberOfPasswordPrompts=1",
+      "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no",
+      ...extraSshArgs, "--", remote, ...remoteArgv];
+    Object.assign(env, { SSH_ASKPASS: helper, SSH_ASKPASS_REQUIRE: "force", DISPLAY: "sparkdash:0", SPARKDASH_SSH_PASSWORD: password });
+  } else if (auth === "pass") {
     if (!password) {
       throw new Error(
         `SSH password auth selected for ${spark.id} but no password is set (Edit Spark once — passwords are stored encrypted and survive restarts)`
@@ -244,9 +276,9 @@ export function sshCommandSpec(spark, opts = {}) {
     ];
   } else {
     // Key-based SSH (default) — BatchMode prevents hanging on missing keys
-    file = "ssh";
+    file = sshFile;
     args = [...baseOpts, ...controlOpts, "-o", "BatchMode=yes"];
-    const identityFile = process.env.SSH_IDENTITY_FILE;
+    const identityFile = spark.ssh?.identityFile || process.env.SSH_IDENTITY_FILE;
     if (identityFile) {
       args.push("-i", identityFile);
     }
@@ -261,10 +293,11 @@ export function sshCommandSpec(spark, opts = {}) {
  *
  * @param {Object} spark - Spark config object
  * @param {string} cmd - Command to execute (passed as a single remote argv via bash -c)
- * @param {{ timeoutMs?: number }} [options]
+ * @param {{ timeoutMs?: number, multiplex?: boolean, onStdout?: (chunk: string) => void }} [options]
  * @returns {Promise<string>} - Trimmed stdout
  */
 export async function sshExec(spark, cmd, options = {}) {
+  if (_closing) throw new Error("SSH connections are closing");
   const timeoutMs =
     Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 10000;
 
@@ -274,11 +307,12 @@ export async function sshExec(spark, cmd, options = {}) {
 
   const { file, args, env, targetHost, multiplex } = sshCommandSpec(spark, {
     remoteArgv: [cmd],
+    multiplex: options.multiplex,
   });
 
   const execute = (execArgs) =>
     new Promise((resolve, reject) => {
-      execFile(file, execArgs, { timeout: timeoutMs, env, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const child = execFile(file, execArgs, { timeout: timeoutMs, env, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           const msg = stderr?.trim() || err.message;
           reject(new Error(`SSH to ${targetHost} failed: ${msg}`));
@@ -286,12 +320,21 @@ export async function sshExec(spark, cmd, options = {}) {
           resolve(String(stdout).trim());
         }
       });
+      if (options.onStdout) child.stdout.on("data", (chunk) => options.onStdout(String(chunk)));
+      _sshChildren.add(child);
+      child.once("close", () => _sshChildren.delete(child));
     });
 
   if (multiplex) {
     const probeArgs = [...args];
     probeArgs[probeArgs.length - 1] = "true";
+    _masters.set(multiplex.key, {
+      socket: `${_controlDir}/${multiplex.key}`,
+      remote: spark.ssh?.user ? `${spark.ssh.user}@${targetHost}` : targetHost,
+      port: spark.ssh?.port || 22,
+    });
     await ensureMultiplexReady(multiplex, () => execute(probeArgs));
+    if (_closing) throw new Error("SSH connections are closing");
   }
   try {
     return await execute(args);
@@ -309,7 +352,8 @@ export async function sshExec(spark, cmd, options = {}) {
  */
 export async function sshTest(spark) {
   try {
-    const result = await sshExec(spark, "echo ok");
+    // Verify current credentials rather than reusing an authenticated master.
+    const result = await sshExec(spark, "echo ok", { multiplex: false });
     return { ok: result === "ok", message: result };
   } catch (err) {
     return { ok: false, message: err.message };
@@ -325,6 +369,7 @@ export async function sshTest(spark) {
  * so any future caller that forgets the arg can't silently hit port 8888.
  */
 export async function llmTest(spark, port) {
+  let lease;
   try {
     const host = llmProbeHost(spark);
     if (!isAllowedTargetHost(host)) {
@@ -334,7 +379,9 @@ export async function llmTest(spark, port) {
       Number.isInteger(port) && port >= 1 && port <= 65535
         ? port
         : Number(spark?.llmPorts?.[0] || spark?.llmPort) || 8888;
-    const url = `http://${host}:${resolvedPort}/v1/models`;
+    const { serviceTargets, serviceBaseUrl } = await import('./ServiceTargets.js');
+    if (process.env.SPARKDASH_DESKTOP === '1') lease = await serviceTargets.acquire(spark, resolvedPort);
+    const url = `${lease ? serviceBaseUrl(lease) : `http://${host}:${resolvedPort}`}/v1/models`;
     /** @type {Record<string, string>} */
     const headers = {};
     const apiKey =
@@ -350,7 +397,7 @@ export async function llmTest(spark, port) {
     return { ok: res.ok, message: `Model: ${data?.data?.[0]?.id || "unknown"}` };
   } catch (err) {
     return { ok: false, message: err.message };
-  }
+  } finally { lease?.close(); }
 }
 
 /**
@@ -374,6 +421,7 @@ export async function llmTestAll(spark) {
  * Returns { ok: boolean, message: string, skipped?: boolean }
  */
 export async function comfyTest(spark, port) {
+  let lease;
   try {
     const host = llmProbeHost(spark);
     if (!isAllowedTargetHost(host)) {
@@ -383,7 +431,9 @@ export async function comfyTest(spark, port) {
       Number.isInteger(port) && port >= 1 && port <= 65535
         ? port
         : Number(spark?.comfyPort) || COMFY_PORT;
-    const url = `http://${host}:${resolvedPort}/system_stats`;
+    const { serviceTargets, serviceBaseUrl } = await import('./ServiceTargets.js');
+    if (process.env.SPARKDASH_DESKTOP === '1') lease = await serviceTargets.acquire(spark, resolvedPort, 'comfy');
+    const url = `${lease ? serviceBaseUrl(lease) : `http://${host}:${resolvedPort}`}/system_stats`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(COMFY_PROBE_TIMEOUT_MS),
     });
@@ -398,5 +448,5 @@ export async function comfyTest(spark, port) {
     };
   } catch (err) {
     return { ok: false, message: err.message };
-  }
+  } finally { lease?.close(); }
 }

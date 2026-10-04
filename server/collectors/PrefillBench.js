@@ -251,12 +251,8 @@ export class PrefillBenchManager {
     if (!hist.length) return null;
     if (port != null) {
       const p = Number(port);
-      const match = hist.find(
-        (j) => j.config?.port === p && Array.isArray(j.results) && j.results.length > 0
-      );
-      if (match) return match;
-      const anyPort = hist.find((j) => j.config?.port === p);
-      if (anyPort) return anyPort;
+      // Preserve the latest outcome, including an interrupted empty run.
+      return hist.find((j) => j.config?.port === p) || null;
     }
     return hist[0] || null;
   }

@@ -40,7 +40,7 @@ async function startServer(t) {
   child.stderr.on("data", (chunk) => (output += chunk));
   await Promise.race([
     new Promise((resolve) => {
-      const check = () => (output.includes("server listening") ? resolve() : setTimeout(check, 10));
+      const check = () => (output.includes("server listening") ? resolve() : setTimeout(check, 10).unref());
       check();
     }),
     new Promise((_, reject) =>

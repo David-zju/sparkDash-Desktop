@@ -34,7 +34,9 @@ export function hasFreshPowerTelemetry(snapshot, monitor, atMs) {
   const gpu = snapshot?.metrics?.gpu;
   const cpu = snapshot?.metrics?.cpu;
   return (
+    snapshot?.kind !== "host" &&
     snapshot?.online === true &&
+    cpu?.usageAvailable !== false &&
     wasCollectionSuccessful(monitor, "gpu") &&
     wasCollectionSuccessful(monitor, "cpu") &&
     hasFreshTimestamp(monitor?._lastUpdate?.gpu, atMs) &&
