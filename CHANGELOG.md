@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to **sparkDash** are documented here.  
-The README [Latest version changelog](./README.md#latest-version-changelog) always reflects only the current release; this file keeps the full history.
+This file preserves the imported upstream history. For desktop adaptations and dated validation, see [desktop verification](docs/verification.md); for source attribution, see [acknowledgements](ACKNOWLEDGEMENTS.md).
 
 Format: version sections are listed newest first.
 

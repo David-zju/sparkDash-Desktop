@@ -1,16 +1,16 @@
 # sparkDash Desktop 项目交接
 
-更新日期：2026年10月4日，Asia/Shanghai。本项目把 MiaAI-Lab/sparkDash 的完整功能迁移为优先支持 Mac 的桌面应用。本次接手完成的是需求归档、上游静态核查和实施计划，尚未实现或实测桌面应用。
+更新日期：2026年10月5日，Asia/Shanghai。本文保留初始需求和上游核查背景；当前实现与测试状态以 [验收记录](verification.md) 为准。内部 ARM64 桌面版本已实现，完成 478 项源码测试、14 项本机打包检查与 10 项四机打包只读检查；应用和交付说明见主 README。
 
 ## 已明确的产品目标
 
 - 界面和采集后台一起在用户的 Mac 上运行，日常双击 App 即可使用，无需另开终端运行 Node 或 Docker。
 - 通过 SSH，以及必要的 HTTP 或 SSH 隧道连接四台 DGX Spark / GB10 设备；远端尽量复用已有命令和服务，不新增每节点常驻采集 agent。
 - 以完整 sparkDash 桌面化为方向。多机监控、LLM、基准测试、Prompt Showcase、ComfyUI、Hermes 和设备操作都进入迁移范围，不能把最终产品擅自缩成四个 GPU 卡片。
-- Mac 是第一平台，其他桌面平台暂不作首阶段交付承诺。Electron 是优先评估方案，尚不是已落地的技术决策。
+- Mac 是第一平台，其他桌面平台暂不作首阶段交付承诺。桌面实现已采用 Electron，Mac ARM64 为当前构建目标。
 - 应用名暂用 sparkDash Desktop，仓库名建议 `sparkdash-desktop`。未来 README 需说明这是独立维护的上游衍生项目，保留上游许可证和归属。
 
-## 接手时的项目状态
+## 接手时的项目状态（历史记录）
 
 `/Users/david/Dev/sparkDash Desktop` 初始为空目录，不是 Git 仓库。检查了项目目录以及 `/`、`/Users`、`/Users/david`、`/Users/david/Dev` 的 `AGENTS.md` 路径，未发现适用于本项目的指令文件。原运维项目的 `AGENTS.md` 不属于本目录的祖先指令。
 
@@ -55,7 +55,7 @@ NVIDIA 官方确认，iGPU 上整卡 `Memory-Usage` 可以不受支持，同时�
 
 ## 连接与操作边界
 
-- 四台设备的完整地址、SSH 用户、认证方式、服务端口和网络可达性尚未交接，不假设已有访问权限或可用连接。
+- 用户已提供本机 SSH 别名 `dgx-1` 至 `dgx-4`，只读连接和硬件采集已通过。2026年10月5日检查未发现常见 LLM/ComfyUI 监听端口；未启动或改动远端服务。
 - Mac 上所有被监控设备都走远程路径。不能把 Mac 当成本地 Linux Spark，执行依赖 `/proc`、sysfs 或 `nsenter` 的本机采集。
 - SSH 系统命令路径、密钥、agent、加密私钥、密码、known_hosts 和非默认端口都需适配。Mac 从 Finder 启动的环境不能假定与终端一致。
 - SSH 可达不代表远端 HTTP 可达；基准测试、日常 LLM 监控、ComfyUI HTTP/WS、取消任务、外部网页分别检查路由与隧道生命周期。
