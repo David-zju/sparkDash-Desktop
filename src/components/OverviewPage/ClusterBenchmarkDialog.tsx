@@ -6,6 +6,7 @@ import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 const button = "rounded-lg border border-border bg-surface-elevated px-3 py-2 text-sm text-text hover:bg-surface-hover disabled:opacity-40";
 const field = "w-full rounded-lg border border-border bg-surface-elevated p-2 text-sm text-text";
+const diagnostic = (message: string) => message.split(": ").map((part) => tr(part)).join(": ");
 const active = (job: FabricBenchmarkJob | null) => job?.status === "running" || job?.status === "cancelling";
 
 export function ClusterBenchmarkDialog({ headId, members, onClose }: { headId: string; members: SparkSnapshot[]; onClose: () => void }) {
@@ -102,7 +103,7 @@ export function ClusterBenchmarkDialog({ headId, members, onClose }: { headId: s
         {job.error && <p className="break-words text-sm text-warning">{tr(job.error)}</p>}
         {job.results.map((r, i) => <div key={i} className="rounded-xl border border-border bg-surface-elevated p-3">
           <div className="flex flex-wrap justify-between gap-2 text-sm text-text"><span>{r.kind === "tcp" ? "TCP" : "RDMA Write"} · {r.direction === "forward" ? `${job.names[0]} → ${job.names[1]}` : r.direction === "reverse" ? `${job.names[1]} → ${job.names[0]}` : tr("Both directions")}</span><strong>{r.gbps !== null ? `${r.gbps.toFixed(2)} Gb/s` : tr(r.status)}</strong></div>
-          {r.error && <p className="mt-2 break-words text-xs text-warning">{tr(r.error)}</p>}
+          {r.error && <p className="mt-2 break-words text-xs text-warning">{diagnostic(r.error)}</p>}
           {r.logs.length > 0 && <details className="mt-2 text-xs text-muted"><summary className="cursor-pointer">{tr("Test output")}</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{r.logs.map((l) => `${l.side}\n${l.stdout}\n${l.stderr}`).join("\n")}</pre></details>}
         </div>)}
         {job.checks.length > 0 && <details className="text-xs text-muted"><summary className="cursor-pointer">{tr("Tools and RDMA devices")}</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(job.checks, null, 2)}</pre></details>}

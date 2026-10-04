@@ -37,6 +37,7 @@ Run commands from the repository root after installing dependencies. Scripts are
 | `pnpm test` | Source and integration / 源码与集成 | Installed dependencies / 已安装依赖 |
 | `pnpm test:packaged` | Local packaged fixtures / 本机打包模拟服务 | Built macOS app / 已打包应用 |
 | `node scripts/test-language.mjs` | Packaged bilingual UI / 打包双语界面 | Built app / 已打包应用 |
+| `node scripts/test-cluster-benchmark-ui.mjs` | TCP / RDMA UI with simulated results / 带宽检测界面，模拟结果 | Built frontend and Chrome / 已构建前端与 Chrome |
 | `node scripts/test-clusters-ui.mjs` | Browser cluster fixtures / 浏览器集群模拟 | Built frontend and Playwright browser / 已构建前端与 Playwright 浏览器 |
 | `node scripts/test-live-readonly.mjs` | Real-host read-only telemetry / 实机只读采集 | Configured SSH aliases `dgx-1`–`dgx-4` |
 | `node scripts/test-clusters-live.mjs` | Real network discovery / 实机网络发现 | Same four SSH targets / 同上 |

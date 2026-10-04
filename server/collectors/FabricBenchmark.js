@@ -96,7 +96,7 @@ export class FabricBenchmark {
         const unavailable = checks.find((c) => c.error || !c.tools?.[tool]?.available || (kind === 'rdma' && !c.rdma));
         if (unavailable) {
           job.results.push({ kind, direction: 'both', status: 'unavailable', gbps: null,
-            error: `${unavailable.id}: ${unavailable.error || unavailable.tools?.[tool]?.reason || 'No matching active RoCE v2 GID'}`, logs: [] });
+            error: `${unavailable.id}: ${tool}: ${unavailable.error || unavailable.tools?.[tool]?.reason || 'No matching active RoCE v2 GID'}`, logs: [] });
           continue;
         }
         // perftest requires compatible versions; do not suppress its own version exchange.

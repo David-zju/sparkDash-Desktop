@@ -4,6 +4,19 @@
 
 ## 已完成的实现
 
+### 集群带宽与 RDMA 检测（2026-10-05）
+
+- 集群卡片新增“带宽 / RDMA 检测”：选择同组两台设备和一条直连路径，手动运行 TCP 或 RDMA Write 测试，分别显示两个方向的 Gb/s。结果保存在后台内存，关闭弹窗后可重新查看，下一次测试或后台重启时替换。
+- TCP 使用 `iperf3`，绑定所选 IPv4，4 路并发、每方向 10 秒，取接收端吞吐量。RDMA 使用 `ib_write_bw`，匹配所选网口/IP 的活动 RoCE v2 GID，64 KiB 消息、每方向 10 秒，取平均写入带宽。测试使用主机内存，不验证 GPU Direct、NCCL 或推理集群，也不合计不同网口带宽。
+- 后台重新发现路径并校验集群成员，不接受浏览器指定任意主机或命令。启动前检查两端工具及 RDMA 条件；缺工具、版本不匹配或缺 GID 会显示无法测试。全局最多一个测试任务，不自动安装工具、提权或修改网络配置。
+- 服务端只在确认本次测试进程已监听后才启动客户端，不用试连接消耗一次性测试服务。停止操作仅定位当前运行标识下的 Python 包装进程，由包装进程回收其子进程组；无按名称批量杀进程。远端设 40 秒超时，后台退出时请求停止当前测试。
+- 完整源码测试通过：后端 403、前端 85、桌面 29 项；类型检查和生产构建通过。Vite 仍有主 JS 包超过 500 KB 的体积提示。另有 4 项 Python 本机测试通过，覆盖命令绑定、GID 匹配、按运行标识取消，以及真实子进程中断回收。
+- `node scripts/test-cluster-benchmark-ui.mjs` 使用隔离配置、真实 HTTP 和后台任务管理器，以及明确标为模拟值的工具输出，验证显式开始、双向结果、关闭再打开、工具缺失不启动流量及 390px 窄窗口。截图位于 `.desktop-test/cluster-bandwidth-fixture-*.png`，数值不可作为实机性能证据。
+- Python 测试命令：`python3 -B -m unittest discover -s server/collectors/__tests__ -p 'fabric_benchmark_test.py' -v`。Node 和界面测试已纳入现有测试套件；Python 检查单独运行。
+- 已重新生成 `release/sparkDash-darwin-arm64/sparkDash.app` 并通过严格 ad-hoc 签名校验。使用临时数据目录和两个 loopback 测试节点打开实际应用，确认中文入口、初始禁用的开始按钮、鉴权 API 返回空任务，以及打包 Python 脚本与当前源码逐字节一致；未发起网络测试。截图 `.desktop-test/cluster-bandwidth-packaged-entry.png`。
+- 本轮没有在真实设备上运行带宽或 RDMA 压测；真实工具版本、驱动、权限和网口环境仍需通过用户手动测试确认。
+- 命令参数依据：[iperf3 官方文档](https://software.es.net/iperf/invoking.html)、[perftest README](https://github.com/linux-rdma/perftest/blob/master/README)及[参数实现](https://github.com/linux-rdma/perftest/blob/master/src/perftest_parameters.c)。
+
 ### 集群配置与 200G 检测（2026-10-05）
 
 - 总览新增三步集群向导：网络检测、Head/Worker 分配、确认保存。同一 Head 的成员在一个大卡片内显示，兼容已有角色配置与隐藏/搜索筛选；支持换 Head、移出成员、解散分组。角色更新一次原子落盘，失败不留下部分成员变更。

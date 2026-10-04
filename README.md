@@ -23,38 +23,67 @@ A desktop application for monitoring NVIDIA DGX Spark and remote Linux NVIDIA GP
 | Benchmarks and demos | Decode / Prefill benchmarks, TTFT, saved results, text/image sharing and streaming Prompt Showcase |
 | Optional services | ComfyUI queues and progress, Hermes status and explicit updates, Tailscale status |
 | Desktop integration | Native menus, four themes, live language switching, local SSH alias import, key/password authentication, service tunnels and sleep/wake cleanup |
-| Cluster overview | Head/Worker grouping and direct-link 200G network discovery for 2–12 saved Sparks |
+| Cluster overview | Head/Worker grouping and direct-link 200G network discovery for 2–12 saved Sparks, plus optional pairwise TCP and RDMA Write bandwidth tests |
 | Device operations | Explicit shutdown and Wake-on-LAN actions, subject to remote helper and network support |
 
-The monitoring UI, collectors, service integrations and benchmarks come from upstream sparkDash. This version adds Electron process isolation, authenticated local endpoints, macOS Keychain integration, native SSH handling, bilingual UI and cluster configuration. See the [feature matrix](docs/upstream-feature-matrix.md) and [acknowledgements](ACKNOWLEDGEMENTS.md).
+The monitoring UI, collectors, service integrations and inference benchmarks come from upstream sparkDash. This version adds desktop menus, local SSH configuration import, English / Chinese switching, cluster grouping, and bandwidth / RDMA tests. See the [feature matrix](docs/upstream-feature-matrix.md) and [acknowledgements](ACKNOWLEDGEMENTS.md).
 
 ## Install and connect
 
-1. Use an internally supplied ARM64 archive, or build the app below. Extract it and move `sparkDash.app` into Applications.
+1. Extract the macOS app archive and move `sparkDash.app` into Applications. To build it yourself, follow [Development](#development) to install dependencies, then run `pnpm package:mac`.
 2. Launch the app and add a device. Import an alias from your local SSH configuration or enter its address manually. Leaving username, port and private key blank inherits the SSH configuration, including supported `Include` files.
 3. Select **Test SSH connection**. If key authentication fails, use **Use password instead** to retry. Testing does not save the device or password; **Save** persists them.
 4. Set the ports of services already running on the device, or disable unused service monitoring. The default LLM port is `8888`; ComfyUI defaults to `8188`.
 5. Choose **Language → English / 简体中文** in the native menu, or change the language in Settings. The preference survives restarts; first launch defaults to English.
 
-## Cluster discovery and operational limits
+## Clusters and network tests
+
+### Create a cluster group
 
 From Overview, use **Detect 200G / Create cluster** to inspect saved SSH targets, select a group and assign its Head. Groups can later be edited or dissolved. Saving roles organizes monitoring; it does not deploy an inference cluster.
 
-A green network result means bidirectional IPv4 probing succeeded over directly connected interfaces negotiating at least 200 Gb/s. It is not a throughput, RDMA, NCCL or tensor-parallel inference result. Routed paths, missing addresses and failed probes remain unverified. See [NVIDIA’s clustering guide](https://docs.nvidia.com/dgx/dgx-spark/spark-clustering.html) for network setup.
+A green network result means bidirectional IPv4 probing succeeded over directly connected interfaces negotiating at least 200 Gb/s. This indicates link status; use the bandwidth tests below to measure actual throughput. Routed paths, missing addresses and failed probes remain unverified. See [NVIDIA’s clustering guide](https://docs.nvidia.com/dgx/dgx-spark/spark-clustering.html) for network setup.
 
-Monitoring does not install LLM, ComfyUI or Hermes services. Benchmarks, Showcase, cancellation, updates and power operations require explicit actions in the UI. Energy and memory attribution contain estimates; unavailable metrics are not measurements of zero. Some LLM backends do not expose live token counters.
+### Test bandwidth and RDMA
+
+1. Choose **Bandwidth / RDMA test** on a cluster card.
+2. Select two devices, click **Find network paths**, then choose the path to test.
+3. Select TCP bandwidth, RDMA Write, or both, and click **Start network test**.
+
+| Test | Required on both devices | Result |
+| --- | --- | --- |
+| TCP bandwidth | `iperf3` | Measured receiver throughput |
+| RDMA Write | Matching `ib_write_bw` versions and configured, active RoCE v2 interfaces | Average write bandwidth using host memory |
+
+Each test runs for 10 seconds in each direction and reports Gb/s for the selected path only. Missing tools or unmet prerequisites are reported in the dialog. RDMA tests do not exercise GPU Direct, NCCL or model inference.
+
+Tests consume network bandwidth, so run them when the cluster is idle. Click **Stop network test** to cancel. Closing the dialog leaves the test running; reopen it to view progress and results. Only one network test job can run at a time. Results remain available until the next test or backend restart.
 
 ## Data, credentials and updates
 
-Application data lives in `~/Library/Application Support/sparkDash`; open it from **Monitor → Open data directory**. SSH aliases and key-only connections do not access Keychain. Saving passwords/API keys, or reading existing encrypted credentials, requests access to **sparkDash Safe Storage**. The system dialog accepts your login keychain password; the app does not receive it. Credentials use AES-GCM with a Keychain-protected encryption key.
+Application data lives in `~/Library/Application Support/sparkDash`; open it from **Monitor → Open data directory**. SSH aliases and key-only connections do not access Keychain. Saving passwords/API keys, or reading existing encrypted credentials, requests access to **sparkDash Safe Storage**. The system dialog accepts your login keychain password; the app does not receive it. Saved passwords and API keys are encrypted, with the encryption key protected by macOS Keychain.
 
 To update, quit the app and replace the application bundle. Back up the complete data directory after quitting, and retain the previous app. To roll back, restore both the previous app and its matching data backup. Encrypted data may not be decryptable under another Mac/user; preserve `secrets-key.encrypted` with the encrypted data.
 
-Closing the last window exits and stops sampling. Sleep pauses monitoring; wake establishes new connections and rate baselines. Short charts live in window memory; long-term statistics and task results persist. Sampling gaps are not backfilled. If credentials cannot be unlocked, preserve the files and retry using **Monitor → Reconnect backend**. Fleet membership changes may also require reconnecting to start a new energy sampling group.
+Closing the last window exits and stops sampling. Sleep pauses monitoring; wake establishes new connections and rate baselines. Short charts live in window memory; long-term LLM statistics and inference benchmark results persist. Sampling gaps are not backfilled. If credentials cannot be unlocked, preserve the files and retry using **Monitor → Reconnect backend**. Fleet membership changes may also require reconnecting to start a new energy sampling group.
+
+## Project layout
+
+```text
+src/          React + TypeScript UI, API clients, shared types and i18n
+server/       Express / WebSocket backend, collectors, registry and statistics
+desktop/      Electron main/preload, backend lifecycle, SSH and credential bridge
+scripts/      Packaging and local / hardware acceptance checks
+config/       Browser/server-mode defaults and helpers
+assets/       Application assets
+docs/         Architecture, feature matrix, verification and research
+```
+
+`node_modules/`, `.pnpm-store/`, `dist/`, `release/` and `.desktop-test/` are generated local directories and are ignored by Git. Runtime configuration and secrets are excluded; `config/settings.json` is the tracked default settings file. Use the pnpm lockfile for reproducible dependency resolution.
 
 ## Development
 
-Requires macOS for Electron desktop execution/packaging, Node.js **24.19+**, and **pnpm 11.25.0**. Commands run from the repository root:
+The current desktop development and packaging workflow uses macOS, Node.js **24.19+**, and **pnpm 11.25.0**. Commands run from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -75,25 +104,7 @@ pnpm desktop
 | `pnpm package:mac` | Build frontend and package/sign the ARM64 app |
 | `pnpm test:packaged` | Exercise the built app with isolated local fixtures |
 
-Packaging produces `release/sparkDash-darwin-arm64/sparkDash.app` and verifies its ad-hoc signature. It does not automatically create a ZIP or notarize the app. Packaged tests use `.desktop-test/` for isolated data. Hardware-specific scripts and their prerequisites are listed in the [documentation index](docs/README.md).
-
-## Project layout
-
-```text
-src/          React + TypeScript UI, API clients, shared types and i18n
-server/       Express / WebSocket backend, collectors, registry and statistics
-desktop/      Electron main/preload, backend lifecycle, SSH and credential bridge
-scripts/      Packaging and local / hardware acceptance checks
-config/       Browser/server-mode defaults and helpers
-assets/       Application assets
-docs/         Architecture, feature matrix, verification and research
-```
-
-`node_modules/`, `.pnpm-store/`, `dist/`, `release/` and `.desktop-test/` are generated local directories and are ignored by Git. Runtime configuration and secrets are excluded; `config/settings.json` is the tracked default settings file. Use the pnpm lockfile for reproducible dependency resolution.
-
-## Documentation and verification
-
-Start with the [documentation index](docs/README.md). The [verification record](docs/verification.md) distinguishes source tests, local fixtures, packaged checks and real-device coverage. Its latest full source run records 396 backend, 81 frontend and 28 desktop tests; hardware coverage and operations not tested are listed in that record.
+Packaging produces `release/sparkDash-darwin-arm64/sparkDash.app`. Further development notes, test scripts and verification records are listed in the [documentation index](docs/README.md).
 
 ## License and upstream credit
 

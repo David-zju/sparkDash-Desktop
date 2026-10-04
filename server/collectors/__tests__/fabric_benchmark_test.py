@@ -1,4 +1,6 @@
 """Local fixtures only: no remote hosts, RDMA devices or real network load."""
+import base64
+import json
 import importlib.util
 import os
 from pathlib import Path
@@ -41,6 +43,19 @@ class BenchmarkTest(unittest.TestCase):
             self.assertEqual(args[args.index('--bind_source_ip')+1], '10.1.1.1')
             self.assertNotIn('--use_cuda', args)
             with self.assertRaises(ValueError): b.command({**base, 'port': '25000; echo bad'})
+
+    def test_cancel_only_signals_matching_run_wrappers(self):
+        marker = 'sparkdash-fabric-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for pid, tag, action in [(910001, marker, 'run'), (910002, marker, 'cancel'),
+                                     (910003, marker, 'inspect'), (910004, 'different-run', 'run')]:
+                folder = root / str(pid); folder.mkdir()
+                payload = base64.b64encode(json.dumps({'action': action}).encode())
+                (folder / 'cmdline').write_bytes(b'\0'.join([b'python3', b'-c', b'wrapper', tag.encode(), payload, b'']))
+            with patch.object(b, 'Path', return_value=root), patch.object(b.os, 'kill') as kill:
+                self.assertEqual(b.cancel(marker), {'stopped': 1})
+                kill.assert_called_once_with(910001, signal.SIGTERM)
 
     def test_interrupt_reaps_only_its_child_process_group(self):
         # Run wrapper in a separate interpreter: signal handlers must not affect unittest.

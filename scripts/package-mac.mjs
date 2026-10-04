@@ -12,7 +12,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'ut
 for (const directory of ['desktop', 'server', 'dist', 'src/shared']) {
   fs.cpSync(path.join(root, directory), path.join(staging, directory), {
     recursive: true,
-    filter: (source) => !source.split(path.sep).includes('__tests__'),
+    filter: (source) => !source.split(path.sep).some((part) => ['__tests__', '__pycache__'].includes(part)),
   });
 }
 for (const notice of ['LICENSE', 'ACKNOWLEDGEMENTS.md']) {

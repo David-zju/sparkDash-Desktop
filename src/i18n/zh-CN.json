@@ -768,5 +768,7 @@
   "A bandwidth test is already running": "已有带宽测试正在运行",
   "Select two members of the same saved cluster": "请选择同一集群中的两台设备",
   "Selected network path is no longer available": "所选网络路径已不可用，请重新查找网口",
-  "RDMA tool versions differ between devices": "两台设备的 RDMA 测试工具版本不同"
+  "RDMA tool versions differ between devices": "两台设备的 RDMA 测试工具版本不同",
+  "unsupported-tool-version": "工具版本不支持所需参数",
+  "No matching active RoCE v2 GID": "未找到与所选网口和 IP 匹配的可用 RoCE v2 GID"
 }
