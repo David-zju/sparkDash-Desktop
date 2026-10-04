@@ -1,9 +1,12 @@
 node_modules/
+.pnpm-store/
 dist/
 release/
 .desktop-test/
 .env
 .DS_Store
+__pycache__/
+*.py[cod]
 *.log
 config/*.json
 config/.secrets-key
