@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.desktop-test/
+.env
+.DS_Store
+*.log
+config/*.json
+config/.secrets-key
+config/bench-exports/
+!config/settings.json
