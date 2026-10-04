@@ -61,6 +61,7 @@ if (process.env.SPARKDASH_DESKTOP !== "1") dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
+const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
 
 // Default to loopback. Direct non-loopback binds fail closed because this release
 // does not authenticate LAN clients. Use an SSH tunnel, authenticated reverse
@@ -353,7 +354,7 @@ app.use(async (req, res, next) => {
   }
   next();
 });
-app.get("/api/runtime", (_req, res) => res.json({ desktop, version: "1.8.9-desktop.1", remoteOnly: desktop }));
+app.get("/api/runtime", (_req, res) => res.json({ desktop, version: APP_VERSION, remoteOnly: desktop }));
 
 app.get("/api/health", (_req, res) => {
   res.json(inspectHealth(process.env.BIND_HOST || "127.0.0.1"));
