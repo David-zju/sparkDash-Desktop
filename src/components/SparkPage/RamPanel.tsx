@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import type { RamMetrics } from "../../api/types";
 import { Sparkline } from "../ui/Sparkline";
 import { Panel } from "../ui/Panel";
@@ -18,6 +19,7 @@ interface RamPanelProps {
  * dedicated CPU panel.
  */
 export function RamPanel({ ram, sparkId, className }: RamPanelProps) {
+  useLocale();
   const history = useMetricsHistoryTail(sparkId, "ram.percentage");
   const used = ram?.used ?? 0;
   const total = ram?.total ?? 0;
@@ -44,7 +46,7 @@ export function RamPanel({ ram, sparkId, className }: RamPanelProps) {
           />
           {history.length > 0 && (
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted">Usage</span>
+              <span className="text-muted">{tr("Usage")}</span>
               <div className="flex items-center gap-3">
                 <Sparkline data={history} color="var(--color-accent)" width={180} />
                 <span className="font-tabular text-sm font-semibold text-text">{percentage}%</span>

@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
@@ -81,6 +82,7 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
 }
 
 function ChangelogBody({ body }: { body: string }) {
+  useLocale();
   const blocks = useMemo(() => {
     const out: ReactNode[] = [];
     const lines = body.replace(/\r\n?/g, "\n").slice(0, 40000).split("\n");
@@ -255,6 +257,7 @@ function ChangelogBody({ body }: { body: string }) {
 // ─── Dialog ──────────────────────────────────────────────────────────
 
 function PendingCommitsList({ upd }: { upd: HermesUpdatesResponse }) {
+  useLocale();
   const pending = upd.pending;
   const commits = pending?.commits ?? [];
   return (
@@ -270,8 +273,7 @@ function PendingCommitsList({ upd }: { upd: HermesUpdatesResponse }) {
         ))}
       </ul>
       {pending && pending.count > commits.length && (
-        <p className="mt-2 text-[10px] text-muted">
-          …and {pending.count - commits.length} more (showing first {commits.length}).
+        <p className="mt-2 text-[10px] text-muted">{tr("…and ")}{pending.count - commits.length}{tr(" more (showing first ")}{commits.length}).
         </p>
       )}
     </div>
@@ -279,6 +281,7 @@ function PendingCommitsList({ upd }: { upd: HermesUpdatesResponse }) {
 }
 
 export function HermesUpdateDialog() {
+  useLocale();
   const target = useHermesUpdateDialog();
   const open = target !== null;
   const { mounted, visible } = useModalPresence(open);
@@ -343,7 +346,7 @@ export function HermesUpdateDialog() {
 
   if (!mounted) return null;
 
-  const targetName = upd?.release?.name || upd?.release?.tagName || "latest release";
+  const targetName = upd?.release?.name || upd?.release?.tagName || tr("latest release");
 
   return createPortal(
     <div
@@ -361,27 +364,23 @@ export function HermesUpdateDialog() {
         <div className="modal-sheet__header" id="hermes-update-dialog-title">
           <div className="flex items-center gap-2">
             <RotateIcon className="h-4 w-4 shrink-0 text-accent" />
-            <span>Update Hermes Agent</span>
+            <span>{tr("Update Hermes Agent")}</span>
           </div>
           <p className="mt-1 text-[11px] font-normal text-muted">
             {target?.sparkName}
-            {target?.currentVersion ? ` · installed v${target.currentVersion}` : ""}
+            {target?.currentVersion ? tr(" · installed v{0}", [target.currentVersion]) : ""}
           </p>
         </div>
 
         <div className="modal-sheet__body">
           {loading && (
             <div className="flex items-center gap-2 text-xs text-muted">
-              <RotateIcon className="h-3.5 w-3.5 animate-spin text-accent" />
-              Loading release notes…
-            </div>
+              <RotateIcon className="h-3.5 w-3.5 animate-spin text-accent" />{tr("Loading release notes…")}</div>
           )}
 
           {error && !loading && (
             <div className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2.5">
-              <p className="text-[11px] font-medium text-danger">
-                Couldn't load the changelog. You can still update.
-              </p>
+              <p className="text-[11px] font-medium text-danger">{tr("Couldn't load the changelog. You can still update.")}</p>
               <p className="mt-1 break-words text-[11px] text-muted">{error}</p>
               <div className="mt-2 flex items-center gap-3">
                 <button
@@ -398,17 +397,13 @@ export function HermesUpdateDialog() {
                       .finally(() => setLoading(false));
                   }}
                   className="rounded-md border border-border bg-surface-elevated px-2.5 py-1 text-[11px] text-muted hover:bg-surface-hover hover:text-text"
-                >
-                  Retry
-                </button>
+                >{tr("Retry")}</button>
                 <a
                   href="https://github.com/NousResearch/hermes-agent/releases"
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
-                >
-                  Open releases page
-                  <ExternalLinkIcon className="h-3 w-3" />
+                >{tr("Open releases page")}<ExternalLinkIcon className="h-3 w-3" />
                 </a>
               </div>
             </div>
@@ -418,10 +413,9 @@ export function HermesUpdateDialog() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded bg-accent/15 px-1.5 py-0.5 font-tabular text-[11px] font-medium text-accent">
-                  {upd.pending.count} commit{upd.pending.count === 1 ? "" : "s"} behind main
-                </span>
+                  {tr(upd.pending.count === 1 ? "{0} commit behind main" : "{0} commits behind main", [upd.pending.count])}</span>
                 {upd.installedVersion && (
-                  <span className="text-[11px] text-muted">(installed v{upd.installedVersion})</span>
+                  <span className="text-[11px] text-muted">{tr("(installed v")}{upd.installedVersion})</span>
                 )}
                 {upd.release && upd.release.semver && (
                   <a
@@ -429,35 +423,26 @@ export function HermesUpdateDialog() {
                     target="_blank"
                     rel="noreferrer"
                     className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
-                    title={`These commits are ahead of release v${upd.release.semver}`}
-                  >
-                    View release notes (v{upd.release.semver})
+                    title={tr("These commits are ahead of release v{0}", [upd.release.semver])}
+                  >{tr("View release notes (v")}{upd.release.semver})
                     <ExternalLinkIcon className="h-3 w-3" />
                   </a>
                 )}
               </div>
-              <p className="text-[11px] leading-relaxed text-muted">
-                No tagged release covers these commits — updating pulls only these changes on
-                top of v{upd.installedVersion ?? "your install"}; the full release changelog
-                doesn't apply here.
-              </p>
+              <p className="text-[11px] leading-relaxed text-muted">{tr("No tagged release covers these commits — updating pulls only these changes on top of v")}{upd.installedVersion ?? tr("your install")}{tr("; the full release changelog doesn't apply here.")}</p>
               <PendingCommitsList upd={upd} />
             </div>
           ) : upd && !loading && upd.release ? (
             <div className="space-y-3">
               {upd.pending?.commits?.length ? (
-                <p className="text-[11px] text-muted">
-                  This update also includes {upd.pending.count} commit
-                  {upd.pending.count === 1 ? "" : "s"} on top of the release below.
-                </p>
+                <p className="text-[11px] text-muted">{tr("This update also includes ")}{tr(upd.pending.count === 1 ? "{0} commit" : "{0} commits", [upd.pending.count])}{tr(" on top of the release below.")}</p>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded bg-accent/15 px-1.5 py-0.5 font-tabular text-[11px] font-medium text-accent">
                   {targetName}
                 </span>
                 {target?.currentVersion && (
-                  <span className="text-[11px] text-muted">
-                    (installed v{target.currentVersion})
+                  <span className="text-[11px] text-muted">{tr("(installed v")}{target.currentVersion})
                   </span>
                 )}
                 {upd.release.publishedAt && (
@@ -470,46 +455,38 @@ export function HermesUpdateDialog() {
                   target="_blank"
                   rel="noreferrer"
                   className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
-                  title="View this release on GitHub"
-                >
-                  View on GitHub
-                  <ExternalLinkIcon className="h-3 w-3" />
+                  title={tr("View this release on GitHub")}
+                >{tr("View on GitHub")}<ExternalLinkIcon className="h-3 w-3" />
                 </a>
               </div>
               <div className="max-h-[45vh] overflow-y-auto rounded-md border border-border bg-surface-elevated/40 p-3">
                 {upd.release.body ? (
                   <ChangelogBody body={upd.release.body} />
                 ) : (
-                  <p className="text-xs text-muted">No release notes provided for this version.</p>
+                  <p className="text-xs text-muted">{tr("No release notes provided for this version.")}</p>
                 )}
               </div>
             </div>
           ) : upd && !loading ? (
             <div className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2.5">
-              <p className="text-[11px] font-medium text-danger">
-                Couldn't determine what this update contains. You can still update.
-              </p>
+              <p className="text-[11px] font-medium text-danger">{tr("Couldn't determine what this update contains. You can still update.")}</p>
               <p className="mt-1 break-words text-[11px] text-muted">
-                {upd.releaseError ?? "No release or commit information available."}
+                {upd.releaseError ?? tr("No release or commit information available.")}
               </p>
             </div>
           ) : null}
         </div>
 
         <div className="modal-sheet__footer">
-          <p className="text-[10px] text-muted">
-            Runs <code className="rounded bg-surface-elevated px-1 font-mono">hermes update</code> on{" "}
-            {target?.sparkName} via SSH.
-          </p>
+          <p className="text-[10px] text-muted">{tr("Runs ")}<code className="rounded bg-surface-elevated px-1 font-mono">hermes update</code>{tr(" on")}{" "}
+            {target?.sparkName}{tr(" via SSH.")}</p>
           <div className="modal-sheet__footer-actions">
             <button
               type="button"
               onClick={closeHermesUpdateDialog}
               disabled={updating}
               className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            >{tr("Cancel")}</button>
             <button
               type="button"
               onClick={() => void handleUpdateNow()}
@@ -518,11 +495,9 @@ export function HermesUpdateDialog() {
             >
               {updating ? (
                 <>
-                  <RotateIcon className="h-3 w-3 animate-spin" />
-                  Updating…
-                </>
+                  <RotateIcon className="h-3 w-3 animate-spin" />{tr("Updating…")}</>
               ) : (
-                "Update now"
+                tr("Update now")
               )}
             </button>
           </div>

@@ -1,3 +1,5 @@
+import { translate as tr, useLocale } from "../../i18n";
+import { preferences } from "../../desktop";
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import type { SparkSnapshot } from "../../api/types";
 import { isLlmMonitoringEnabled } from "../../api/sparkRole";
@@ -29,7 +31,7 @@ const SECTION_OPEN_KEYS = {
 
 function readSectionOpen(key: string, fallback = true): boolean {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = preferences.getItem(key);
     if (raw === "0" || raw === "false") return false;
     if (raw === "1" || raw === "true") return true;
   } catch {
@@ -40,7 +42,7 @@ function readSectionOpen(key: string, fallback = true): boolean {
 
 function writeSectionOpen(key: string, open: boolean) {
   try {
-    localStorage.setItem(key, open ? "1" : "0");
+    preferences.setItem(key, open ? "1" : "0");
   } catch {
     /* ignore */
   }
@@ -58,6 +60,7 @@ function SectionHeading({
   onToggle: () => void;
   style?: CSSProperties;
 }) {
+  useLocale();
   return (
     <button
       type="button"
@@ -85,6 +88,7 @@ export function SparkPage({
   benchShareImage = false,
   onEdit,
 }: SparkPageProps) {
+  useLocale();
   const { metrics } = spark;
   const [disabledDevices, setDisabledDevices] = useState<string[]>(spark.disabledDevices || []);
   const [disabledInterfaces, setDisabledInterfaces] = useState<string[]>(
@@ -232,11 +236,27 @@ export function SparkPage({
       />
       <div className="spark-page grid grid-cols-1 md:grid-cols-2" style={{ gap: "var(--density-page-gap)" }}>
         <SectionHeading
-          title="Resources"
+          title={tr("Resources")}
           open={resourcesOpen}
           onToggle={toggleResources}
           style={{ marginTop: "var(--density-page-gap)" }}
         />
+        {resourcesOpen && spark.metricQuality && (
+          <details className="md:col-span-2 px-1 text-xs text-muted">
+            <summary className="cursor-pointer">{tr("Sample times and data sources")}</summary>
+            <div className="mt-2 space-y-1">
+              {Object.entries(spark.metricQuality)
+                .filter(([domain]) => spark.kind === "host" ? domain !== "memory" : domain !== "ram")
+                .map(([domain, quality]) => (
+                  <p key={domain}>
+                    <span className="font-semibold uppercase">{tr(domain)}</span>: {tr(quality.status)}
+                    {quality.observedAt != null ? ` · ${new Date(quality.observedAt).toLocaleTimeString()}` : tr(" · no sample yet")}
+                    {` · ${quality.source}`}
+                  </p>
+                ))}
+            </div>
+          </details>
+        )}
         {resourcesOpen && (
           /* Two independent columns so panels take natural heights (no row-stretch
              dead space). Left: GPU + CPU stacked (CPU sits directly under GPU).
@@ -248,6 +268,7 @@ export function SparkPage({
             <div className="flex flex-col" style={{ gap: "var(--density-page-gap)" }}>
               <GpuPanel
                 gpu={metrics.gpu}
+                sharedMemory={spark.kind !== "host"}
                 sparkId={spark.id}
                 temperatureUnit={temperatureUnit}
               />
@@ -294,7 +315,7 @@ export function SparkPage({
         */}
         {showServices && (
           <SectionHeading
-            title="Services"
+            title={tr("Services")}
             open={servicesOpen}
             onToggle={toggleServices}
             style={{ marginTop: "var(--density-page-gap)" }}
@@ -335,7 +356,7 @@ export function SparkPage({
                       min={1}
                       max={65535}
                       inputMode="numeric"
-                      placeholder="Port number"
+                      placeholder={tr("Port number")}
                       value={newPortDraft}
                       onChange={(e) => setNewPortDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -352,9 +373,7 @@ export function SparkPage({
                       onClick={() => void handleAddPort()}
                       disabled={!newPortDraft.trim()}
                       className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-                    >
-                      Add
-                    </button>
+                    >{tr("Add")}</button>
                     <button
                       type="button"
                       onClick={() => {
@@ -362,9 +381,7 @@ export function SparkPage({
                         setNewPortDraft("");
                       }}
                       className="rounded border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover"
-                    >
-                      Cancel
-                    </button>
+                    >{tr("Cancel")}</button>
                   </div>
                 </div>
               ) : (
@@ -372,9 +389,7 @@ export function SparkPage({
                   type="button"
                   onClick={() => setShowAddPort(true)}
                   className="md:col-span-2 rounded-lg border border-dashed border-border bg-transparent p-3 text-xs text-muted hover:border-accent hover:text-accent transition-colors"
-                >
-                  + Add LLM port
-                </button>
+                >{tr("+ Add LLM port")}</button>
               ))}
           </>
         )}

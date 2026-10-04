@@ -1,5 +1,10 @@
+import { isDesktop } from "../desktop";
 import type {
   DecodeBenchJob,
+  ClusterSetup,
+  FabricDiscovery,
+  FabricBenchmarkJob,
+  FabricLink,
   DecodeBenchListResponse,
   FleetEnergy,
   HermesBatchUpdateResponse,
@@ -20,7 +25,7 @@ import type {
 } from "./types";
 
 const BASE = "";
-const TOKEN = (typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
+const TOKEN = (!isDesktop && typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
 
 function authHeaders(): Record<string, string> {
   return TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {};
@@ -47,6 +52,16 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
 // ─── Sparks CRUD ─────────────────────────────────────────
 export function fetchSparks(): Promise<{ sparks: SparkConfig[] }> {
   return apiFetch("/api/sparks");
+}
+
+export function discoverClusterNetwork(ids: string[]): Promise<FabricDiscovery> {
+  return apiFetch("/api/clusters/discover", { method: "POST", body: JSON.stringify({ ids }) });
+}
+export function saveCluster(config: ClusterSetup): Promise<{ success: boolean; sparks: SparkConfig[] }> {
+  return apiFetch("/api/clusters", { method: "POST", body: JSON.stringify(config) });
+}
+export function dissolveCluster(headId: string): Promise<{ success: boolean; sparks: SparkConfig[] }> {
+  return apiFetch(`/api/clusters/${encodeURIComponent(headId)}`, { method: "DELETE" });
 }
 
 export function fetchFleetEnergy(): Promise<FleetEnergy> {
@@ -441,4 +456,14 @@ export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
     method: "PUT",
     body: JSON.stringify(patch),
   });
+}
+
+export function fetchFabricBenchmark(): Promise<{ job: FabricBenchmarkJob | null }> {
+  return apiFetch("/api/clusters/benchmark");
+}
+export function startFabricBenchmark(request: { headId: string; a: string; b: string; path: FabricLink["paths"][number]; kinds: ("tcp" | "rdma")[] }): Promise<{ job: FabricBenchmarkJob }> {
+  return apiFetch("/api/clusters/benchmark", { method: "POST", body: JSON.stringify(request) });
+}
+export function cancelFabricBenchmark(id: string): Promise<{ job: FabricBenchmarkJob }> {
+  return apiFetch(`/api/clusters/benchmark/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

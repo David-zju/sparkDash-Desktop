@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import type { CpuMetrics, HardwareInfo } from "../../api/types";
 import { Sparkline } from "../ui/Sparkline";
 import { Panel } from "../ui/Panel";
@@ -27,6 +28,7 @@ function MetricRow({
   value: React.ReactNode;
   color?: string;
 }) {
+  useLocale();
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-muted">{label}</span>
@@ -47,8 +49,14 @@ function MetricRow({
  * hosts it covers the discrete CPU.
  */
 export function CpuPanel({ cpu, hardware, sparkId, temperatureUnit, className }: CpuPanelProps) {
+  useLocale();
   const usageHistory = useMetricsHistoryTail(sparkId, "cpu.usage");
   const tempHistory = useMetricsHistoryTail(sparkId, "cpu.temp");
+
+  if (!cpu) return <Panel title="CPU" bodyClassName="space-y-3">
+    <p className="text-sm text-muted">{tr("CPU metrics unavailable")}</p>
+    <p className="text-xs text-muted">{tr("Waiting for a current sample from the device.")}</p>
+  </Panel>;
 
   const usage = cpu?.usage ?? 0;
   const temperature = cpu?.temperature ?? 0;
@@ -79,29 +87,29 @@ export function CpuPanel({ cpu, hardware, sparkId, temperatureUnit, className }:
       bodyClassName="space-y-3"
     >
       <MetricRow
-        label="Usage"
+        label={tr("Usage")}
         color="var(--color-accent)"
         spark={<Sparkline data={usageHistory} color="var(--color-accent)" width={180} />}
-        value={<span className="text-text-strong">{usage}%</span>}
+        value={<span className="text-text-strong">{cpu.usageAvailable === false ? tr("Collecting baseline…") : `${usage}%`}</span>}
       />
       <MetricRow
-        label="Temperature"
+        label={tr("Temperature")}
         color={tempColor}
         spark={<Sparkline data={tempHistory} color={tempColor} width={180} />}
-        value={<span className="text-text-strong">{tempLabel}</span>}
+        value={<span className="text-text-strong">{temperature > 0 ? tempLabel : "—"}</span>}
       />
       <div className="flex justify-between text-sm">
-        <span className="text-muted">CPU Power</span>
+        <span className="text-muted" title={tr("Estimated from CPU utilization and an assumed power envelope, not a wattmeter reading.")}>{tr("CPU power (estimate)")}</span>
         <span className="font-tabular text-sm text-text">
-          {draw}W{tdp > 0 ? ` / ${tdp}W` : ""}
+          {cpu.usageAvailable === false ? "—" : `${draw}W${tdp > 0 ? ` / ${tdp}W` : ""}`}
         </span>
       </div>
       {model && (
         <div className="flex justify-between border-t border-border pt-3 text-xs">
-          <span className="text-muted">Model</span>
+          <span className="text-muted">{tr("Model")}</span>
           <span className="font-tabular text-text" title={model}>
             {model}
-            {cores != null ? ` · ${cores} cores` : ""}
+            {cores != null ? tr(" · {0} cores", [cores]) : ""}
           </span>
         </div>
       )}

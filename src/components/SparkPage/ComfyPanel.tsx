@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import { useState, useCallback, type MouseEvent } from "react";
 import type { ComfyJob, ComfyMetrics, ComfyProgress } from "../../api/types";
 import { cancelComfyJob } from "../../api/client";
@@ -77,14 +78,15 @@ function jobFootprint(job: ComfyJob): string {
   if (job.width != null && job.height != null) {
     parts.push(`${job.width}×${job.height}`);
   }
-  if (job.steps != null) parts.push(`${job.steps} steps`);
-  if (job.batchSize != null && job.batchSize !== 1) parts.push(`batch ${job.batchSize}`);
+  if (job.steps != null) parts.push(tr("{0} steps", [job.steps]));
+  if (job.batchSize != null && job.batchSize !== 1) parts.push(tr("batch {0}", [job.batchSize]));
   if (job.sampler) parts.push(job.sampler);
-  if (job.nodeCount > 0) parts.push(`${job.nodeCount} nodes`);
+  if (job.nodeCount > 0) parts.push(tr("{0} nodes", [job.nodeCount]));
   return parts.join(" · ");
 }
 
 function ProgressBar({ progress }: { progress: ComfyProgress }) {
+  useLocale();
   const pct =
     progress.percent != null
       ? progress.percent
@@ -93,7 +95,7 @@ function ProgressBar({ progress }: { progress: ComfyProgress }) {
         : 0;
   const label =
     progress.nodeLabel ||
-    (progress.source === "estimate" ? "Elapsed (est.)" : "Progress");
+    (progress.source === "estimate" ? tr("Elapsed (est.)") : tr("Progress"));
   const detail =
     progress.max > 0 && progress.source === "ws"
       ? `${Math.round(progress.value)}/${Math.round(progress.max)}`
@@ -107,7 +109,7 @@ function ProgressBar({ progress }: { progress: ComfyProgress }) {
         <span className="truncate text-muted" title={label}>
           {label}
           {progress.source === "estimate" ? (
-            <span className="ml-1 text-[10px] opacity-70">est.</span>
+            <span className="ml-1 text-[10px] opacity-70">{tr("est.")}</span>
           ) : null}
         </span>
         {detail ? <span className="font-tabular text-text">{detail}</span> : null}
@@ -137,6 +139,7 @@ function JobBlock({
   onCancel?: () => void;
   cancelling?: boolean;
 }) {
+  useLocale();
   const title = job.title?.trim() || shortId(job.id);
   const footprint = jobFootprint(job);
   const elapsed = variant === "running" ? formatElapsed(job.createTime) : null;
@@ -156,15 +159,14 @@ function JobBlock({
                   variant === "running" ? "bg-accent" : "bg-muted"
                 }`}
               />
-              {variant === "running" ? "Running" : "Queued"}
+              {variant === "running" ? tr("Running") : tr("Queued")}
             </span>
             {elapsed ? (
               <span className="font-tabular text-[11px] text-muted">{elapsed}</span>
             ) : null}
             {etaLabel ? (
-              <span className="font-tabular text-[11px] text-muted" title="Estimated time remaining">
-                {etaLabel} left
-              </span>
+              <span className="font-tabular text-[11px] text-muted" title={tr("Estimated time remaining")}>
+                {etaLabel}{tr(" left")}</span>
             ) : null}
           </div>
           <p className="mt-1 truncate text-sm font-medium text-text" title={job.title || job.id}>
@@ -178,7 +180,7 @@ function JobBlock({
             disabled={cancelling}
             className="shrink-0 rounded border border-border px-2 py-0.5 text-[11px] text-muted transition-colors hover:border-danger hover:text-danger disabled:opacity-50"
           >
-            {cancelling ? "…" : variant === "running" ? "Cancel" : "Remove"}
+            {cancelling ? "…" : variant === "running" ? tr("Cancel") : tr("Remove")}
           </button>
         ) : null}
       </div>
@@ -186,14 +188,14 @@ function JobBlock({
       {variant === "running" && progress ? <ProgressBar progress={progress} /> : null}
 
       {footprint ? (
-        <p className="font-tabular text-[11px] text-muted" title="Workflow compute footprint">
+        <p className="font-tabular text-[11px] text-muted" title={tr("Workflow compute footprint")}>
           {footprint}
         </p>
       ) : null}
 
       {models.length > 0 ? (
         <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-muted">Models</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted">{tr("Models")}</div>
           <ul className="space-y-0.5">
             {models.slice(0, 6).map((m) => (
               <li key={m} className="truncate font-tabular text-[12px] text-text" title={m}>
@@ -201,7 +203,7 @@ function JobBlock({
               </li>
             ))}
             {models.length > 6 ? (
-              <li className="text-[11px] text-muted">+{models.length - 6} more</li>
+              <li className="text-[11px] text-muted">+{models.length - 6}{tr(" more")}</li>
             ) : null}
           </ul>
         </div>
@@ -217,6 +219,7 @@ export function ComfyPanel({
   lanIp,
   className = "",
 }: ComfyPanelProps) {
+  useLocale();
   const available = Boolean(comfy?.available);
   const pending = comfy?.queuePending ?? 0;
   const active = comfy?.activeJob ?? null;
@@ -243,7 +246,7 @@ export function ComfyPanel({
 
   const handleCancel = useCallback(
     async (promptId: string) => {
-      if (!confirm("Cancel this ComfyUI job?")) return;
+      if (!confirm(tr("Cancel this ComfyUI job?"))) return;
       setActionError(null);
       setCancellingId(promptId);
       try {
@@ -266,7 +269,7 @@ export function ComfyPanel({
       accent
       actions={
         <div className="flex items-center gap-2">
-          <span className="font-tabular text-[11px] text-muted" title="Probe port">
+          <span className="font-tabular text-[11px] text-muted" title={tr("Probe port")}>
             :{comfyPort}
           </span>
           <a
@@ -274,45 +277,39 @@ export function ComfyPanel({
             target="_blank"
             rel="noopener noreferrer"
             onClick={handleOpenComfy}
-            title={`Open ComfyUI at ${openUrl} (must be reachable from your browser)`}
+            title={tr("Open ComfyUI at {0} (must be reachable from your browser)", [openUrl])}
             className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:border-accent hover:text-accent"
           >
-            <ExternalLinkIcon className="h-3 w-3" />
-            Open
-          </a>
+            <ExternalLinkIcon className="h-3 w-3" />{tr("Open")}</a>
         </div>
       }
     >
       {!available ? (
         <div className="space-y-1 text-sm">
-          <p className="text-muted">Not reachable</p>
+          <p className="text-muted">{tr("Not reachable")}</p>
           {comfy?.error ? (
             <p className="break-all text-[11px] text-muted">{comfy.error}</p>
           ) : (
-            <p className="text-[11px] text-muted">
-              Ensure ComfyUI is running on this host (default port 8188).
-            </p>
+            <p className="text-[11px] text-muted">{tr("Ensure ComfyUI is running on this host (default port 8188).")}</p>
           )}
         </div>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="llm-badge">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              Online
-            </span>
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />{tr("Online")}</span>
             {comfy?.version ? (
-              <span className="text-muted" title="ComfyUI version">
+              <span className="text-muted" title={tr("ComfyUI version")}>
                 v{comfy.version}
               </span>
             ) : null}
             {comfy?.deviceType ? (
-              <span className="text-muted" title="ComfyUI compute device">
+              <span className="text-muted" title={tr("ComfyUI compute device")}>
                 {comfy.deviceType}
               </span>
             ) : null}
             {comfy?.pytorchVersion ? (
-              <span className="text-muted" title="PyTorch version">
+              <span className="text-muted" title={tr("PyTorch version")}>
                 torch {comfy.pytorchVersion}
               </span>
             ) : null}
@@ -333,9 +330,7 @@ export function ComfyPanel({
             />
           ) : (
             <div className="space-y-2">
-              <div className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted">
-                Idle — no running job
-              </div>
+              <div className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted">{tr("Idle — no running job")}</div>
               {lastJob ? (
                 <p
                   className={`text-[11px] ${
@@ -345,15 +340,14 @@ export function ComfyPanel({
                         ? "text-muted"
                         : "text-muted"
                   }`}
-                >
-                  Last:{" "}
+                >{tr("Last:")}{" "}
                   <span className="text-text">
                     {lastJob.title?.trim() || shortId(lastJob.id)}
                   </span>
                   {formatDurationMs(lastJob.durationMs)
                     ? ` · ${formatDurationMs(lastJob.durationMs)}`
                     : ""}
-                  {` · ${lastJob.status}`}
+                  {` · ${tr(lastJob.status)}`}
                 </p>
               ) : null}
             </div>
@@ -362,10 +356,9 @@ export function ComfyPanel({
           {pending > 0 ? (
             <div className="space-y-2">
               <div className="flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-wide text-muted">
-                <span>Queue</span>
+                <span>{tr("Queue")}</span>
                 <span className="font-tabular normal-case text-muted">
-                  {pending} pending
-                  {etaLabel ? ` · ${etaLabel}` : ""}
+                  {pending}{tr(" pending")}{etaLabel ? ` · ${etaLabel}` : ""}
                 </span>
               </div>
               {pendingJobs.slice(0, 2).map((job) => (
@@ -379,19 +372,17 @@ export function ComfyPanel({
               ))}
               {pending > Math.min(2, pendingJobs.length) ? (
                 <p className="text-[11px] text-muted">
-                  +{pending - Math.min(2, pendingJobs.length)} more waiting
-                </p>
+                  +{pending - Math.min(2, pendingJobs.length)}{tr(" more waiting")}</p>
               ) : null}
             </div>
           ) : null}
 
           {active && lastJob ? (
-            <p className="text-[11px] text-muted">
-              Last: {lastJob.title?.trim() || shortId(lastJob.id)}
+            <p className="text-[11px] text-muted">{tr("Last: ")}{lastJob.title?.trim() || shortId(lastJob.id)}
               {formatDurationMs(lastJob.durationMs)
                 ? ` · ${formatDurationMs(lastJob.durationMs)}`
                 : ""}
-              {` · ${lastJob.status}`}
+              {` · ${tr(lastJob.status)}`}
             </p>
           ) : null}
 
@@ -403,19 +394,15 @@ export function ComfyPanel({
                 onClick={() => setModelsOpen((o) => !o)}
                 className="flex w-full items-center justify-between text-left text-[11px] text-muted hover:text-text"
               >
-                <span>
-                  Installed: {modelsInstalled.checkpoints.length} checkpoints ·{" "}
-                  {modelsInstalled.loras.length} loras
-                </span>
-                <span className="text-[10px]">{modelsOpen ? "Hide" : "Show"}</span>
+                <span>{tr("Installed: ")}{modelsInstalled.checkpoints.length}{tr(" checkpoints ·")}{" "}
+                  {modelsInstalled.loras.length}{tr(" loras")}</span>
+                <span className="text-[10px]">{modelsOpen ? tr("Hide") : tr("Show")}</span>
               </button>
               {modelsOpen ? (
                 <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
                   {modelsInstalled.checkpoints.length > 0 ? (
                     <div>
-                      <div className="text-[10px] uppercase tracking-wide text-muted">
-                        Checkpoints
-                      </div>
+                      <div className="text-[10px] uppercase tracking-wide text-muted">{tr("Checkpoints")}</div>
                       <ul className="mt-0.5 space-y-0.5">
                         {modelsInstalled.checkpoints.slice(0, 12).map((m) => (
                           <li

@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "./i18n";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useSnapshot } from "./hooks/useSnapshot";
 import { useAppRoute, useRoute } from "./hooks/useRoute";
@@ -49,6 +50,7 @@ function placeholderSnapshot(
     workerNode?: boolean;
     workerLabel?: string | null;
     workerHeadId?: string | null;
+    clusterName?: string | null;
     llmMonitoring?: boolean;
     comfyMonitoring?: boolean;
     comfyPort?: number;
@@ -79,6 +81,7 @@ function placeholderSnapshot(
     role,
     workerLabel: workerNode ? roleFields?.workerLabel ?? null : null,
     workerHeadId: workerNode ? roleFields?.workerHeadId ?? null : null,
+    clusterName: roleFields?.clusterName ?? null,
     llmMonitoring:
       role === "worker"
         ? false
@@ -124,6 +127,7 @@ function placeholderSnapshot(
 }
 
 function DashboardApp() {
+  useLocale();
   const {
     sparks,
     activeId,
@@ -210,7 +214,7 @@ function DashboardApp() {
       .then(setSettings)
       .catch((err) =>
         setActionError(
-          `Could not load settings: ${err instanceof Error ? err.message : String(err)}. Reload to retry.`
+          tr("Could not load settings: {0}. Reload to retry.", [err instanceof Error ? err.message : String(err)])
         )
       );
   }, []);
@@ -242,6 +246,7 @@ function DashboardApp() {
               workerNode: c.workerNode ?? existing.workerNode,
               workerLabel: c.workerLabel ?? existing.workerLabel,
               workerHeadId: c.workerHeadId ?? existing.workerHeadId,
+              clusterName: c.clusterName ?? null,
               llmMonitoring: c.llmMonitoring ?? existing.llmMonitoring,
               comfyMonitoring: c.comfyMonitoring ?? existing.comfyMonitoring,
               comfyPort: c.comfyPort ?? existing.comfyPort,
@@ -264,6 +269,7 @@ function DashboardApp() {
               workerNode: c.workerNode,
               workerLabel: c.workerLabel,
               workerHeadId: c.workerHeadId,
+              clusterName: c.clusterName,
               llmMonitoring: c.llmMonitoring,
               comfyMonitoring: c.comfyMonitoring,
               comfyPort: c.comfyPort,
@@ -280,7 +286,7 @@ function DashboardApp() {
     } catch (err) {
       console.error("Failed to refresh sparks:", err);
       setActionError(
-        `Could not refresh Sparks: ${err instanceof Error ? err.message : String(err)}. Previous data remains visible.`
+        tr("Could not refresh Sparks: {0}. Previous data remains visible.", [err instanceof Error ? err.message : String(err)])
       );
     }
   }, [sparks, activeId, setActiveId]);
@@ -295,7 +301,7 @@ function DashboardApp() {
         console.error("Failed to reorder Sparks:", err);
         setOrderOverride(null);
         setActionError(
-          `Could not save the Spark order: ${err instanceof Error ? err.message : String(err)}. The previous order was restored.`
+          tr("Could not save the Spark order: {0}. The previous order was restored.", [err instanceof Error ? err.message : String(err)])
         );
       }
     },
@@ -303,7 +309,7 @@ function DashboardApp() {
   );
 
   return (
-    <div className="min-h-screen p-0 text-text sm:p-8">
+    <div className="dashboard-viewport min-h-screen p-0 text-text sm:p-8">
       <div className="dashboard-shell">
         <header className="flex flex-wrap items-center gap-3" style={{ marginBottom: "var(--density-header-gap)" }}>
           <button
@@ -329,8 +335,8 @@ function DashboardApp() {
               type="button"
               onClick={() => setShowSettings(true)}
               className="icon-circle"
-              title="Settings"
-              aria-label="Settings"
+              title={tr("Settings")}
+              aria-label={tr("Settings")}
             >
               <GearIcon className="h-4 w-4" />
             </button>
@@ -370,12 +376,8 @@ function DashboardApp() {
               <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-accent-soft text-accent">
                 <span className="text-lg leading-none">+</span>
               </div>
-              <h2 className="text-sm font-semibold text-text-strong">No Spark registered</h2>
-              <p className="mt-1 text-xs text-muted">
-                Click the&nbsp;
-                <span className="rounded border border-border bg-surface-elevated px-1 py-0.5 text-text">+</span>
-                &nbsp;tab to add a DGX Spark unit.
-              </p>
+              <h2 className="text-sm font-semibold text-text-strong">{tr("No Spark registered")}</h2>
+              <p className="mt-1 text-xs text-muted">{tr("Click the ")}<span className="rounded border border-border bg-surface-elevated px-1 py-0.5 text-text">+</span>{tr(" tab to add a DGX Spark unit.")}</p>
             </div>
           )}
         </main>
@@ -414,6 +416,7 @@ function DashboardApp() {
 }
 
 function App() {
+  useLocale();
   const route = useAppRoute();
   if (route.mode === "showcase" && route.showcaseSparkId) {
     return <ShowcasePage sparkId={route.showcaseSparkId} />;

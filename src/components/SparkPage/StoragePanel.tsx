@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import { useState, useCallback } from "react";
 import type { StorageMetrics } from "../../api/types";
 import { updateDisabledDevices, refreshSparkMetric, updateSpark } from "../../api/client";
@@ -15,6 +16,7 @@ interface StoragePanelProps {
 }
 
 function MetricBar({ value, max }: { value: number; max: number }) {
+  useLocale();
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   const barColor = pct > 85 ? "bg-danger" : pct > 60 ? "bg-warning" : "bg-accent";
   return (
@@ -28,6 +30,7 @@ function MetricBar({ value, max }: { value: number; max: number }) {
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  useLocale();
   return (
     <button
       type="button"
@@ -57,10 +60,11 @@ function SettingsButton({
   disabled?: boolean;
   label: string;
 }) {
+  useLocale();
   return (
     <button
       type="button"
-      title={active ? "Done" : `${label} settings`}
+      title={active ? tr("Done") : tr("{0} settings", [label])}
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-hover disabled:opacity-50 ${
@@ -68,7 +72,7 @@ function SettingsButton({
       }`}
     >
       <GearIcon />
-      <span>{active ? "Done" : "Settings"}</span>
+      <span>{active ? tr("Done") : tr("Settings")}</span>
     </button>
   );
 }
@@ -81,6 +85,7 @@ export function StoragePanel({
   storagePollDisabled = false,
   onStoragePollModeChange,
 }: StoragePanelProps) {
+  useLocale();
   const [showSettings, setShowSettings] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -119,7 +124,7 @@ export function StoragePanel({
 
   return (
     <Panel
-      title="Storage"
+      title={tr("Storage")}
       accent
       icon={<DiskIcon />}
       className="panel-storage"
@@ -129,27 +134,27 @@ export function StoragePanel({
             type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            title="Refresh storage"
-            aria-label="Refresh storage"
+            title={tr("Refresh storage")}
+            aria-label={tr("Refresh storage")}
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
           >
             <RotateIcon className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-            <span>{refreshing ? "Refreshing…" : "Refresh"}</span>
+            <span>{refreshing ? tr("Refreshing…") : tr("Refresh")}</span>
           </button>
           <SettingsButton
             active={showSettings}
             onClick={() => setShowSettings(!showSettings)}
             disabled={saving}
-            label="Storage"
+            label={tr("Storage")}
           />
         </div>
       }
     >
       {showSettings ? (
         <div className="space-y-2">
-          <p className="mb-1 text-[10px] text-muted">Toggle devices on/off:</p>
+          <p className="mb-1 text-[10px] text-muted">{tr("Toggle devices on/off:")}</p>
           {storage.length === 0 ? (
-            <p className="text-xs text-muted">No disks discovered</p>
+            <p className="text-xs text-muted">{tr("No disks discovered")}</p>
           ) : (
             storage.map((disk) => {
               const isDisabled =
@@ -173,7 +178,7 @@ export function StoragePanel({
 
           <div className="border-t border-border pt-2">
             <label className="flex items-center justify-between text-xs text-muted">
-              <span>Auto-refresh</span>
+              <span>{tr("Auto-refresh")}</span>
               <Toggle
                 checked={!storagePollDisabled}
                 onChange={(on) => {
@@ -184,15 +189,15 @@ export function StoragePanel({
             </label>
             <p className="mt-0.5 text-[10px] text-muted">
               {storagePollDisabled
-                ? "Refresh manually using the button above"
-                : "Updates every few seconds"}
+                ? tr("Refresh manually using the button above")
+                : tr("Updates every few seconds")}
             </p>
           </div>
         </div>
       ) : (
         <>
           {visibleDisks.length === 0 ? (
-            <p className="text-xs text-muted">No mounted disks</p>
+            <p className="text-xs text-muted">{tr("No mounted disks")}</p>
           ) : (
             <div className="space-y-3.5">
               {visibleDisks.map((disk) => {
@@ -212,8 +217,7 @@ export function StoragePanel({
                         {formatGb(disk.used)} / {formatGb(disk.total)}
                       </span>
                       <span className="font-tabular text-muted">
-                        {formatGb(disk.available)} free
-                      </span>
+                        {formatGb(disk.available)}{tr(" free")}</span>
                     </div>
                     <div className="flex items-center justify-end gap-3 text-[10px]">
                       <span className="font-tabular text-muted">

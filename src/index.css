@@ -249,6 +249,39 @@ body {
   min-height: 100vh;
 }
 
+/* Native macOS traffic lights sit over this strip. It shares the page's
+   backdrop so every palette continues through the title bar. */
+html[data-desktop="darwin"] {
+  --desktop-titlebar-height: 38px;
+  --body-gradient: var(--color-surface);
+}
+
+html[data-desktop="darwin"] body {
+  padding-top: var(--desktop-titlebar-height);
+}
+
+html[data-desktop="darwin"] .min-h-screen {
+  min-height: calc(100vh - var(--desktop-titlebar-height));
+}
+
+.desktop-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 10000;
+  height: var(--desktop-titlebar-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 90px;
+  background: var(--body-gradient);
+  background-attachment: fixed;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 500;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
 ::selection {
   background: var(--color-accent-soft);
   color: var(--color-text-strong);
@@ -307,6 +340,34 @@ input:disabled {
   border-radius: 32px;
   padding: var(--density-shell-pad);
   box-shadow: var(--shadow-shell);
+}
+
+/* A desktop window is already the outer frame. Fill its client area instead
+   of keeping the website's capped, floating console inside a second frame. */
+html[data-desktop="darwin"] .dashboard-viewport {
+  padding: 0;
+}
+
+html[data-desktop="darwin"] .dashboard-shell {
+  width: 100%;
+  max-width: none;
+  min-height: calc(100dvh - var(--desktop-titlebar-height));
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-desktop="darwin"] .overview-page {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+
+html[data-desktop="darwin"] .overview-page > p:only-child {
+  grid-column: 1 / -1;
+}
+
+html[data-desktop="darwin"] :is(.overview-card, .spark-page, .panel) {
+  min-width: 0;
 }
 
 .connection-banner {
@@ -1697,10 +1758,10 @@ input[type="checkbox"] {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
-  max-height: 100vh;
-  max-height: 100dvh;
+  height: calc(100vh - var(--desktop-titlebar-height, 0px));
+  height: calc(100dvh - var(--desktop-titlebar-height, 0px));
+  max-height: calc(100vh - var(--desktop-titlebar-height, 0px));
+  max-height: calc(100dvh - var(--desktop-titlebar-height, 0px));
   overflow: hidden;
   padding: calc(var(--density-shell-pad, 20px) * 0.85);
   background: var(--color-bg);
@@ -2290,8 +2351,8 @@ input[type="checkbox"] {
   .showcase-page {
     height: auto;
     max-height: none;
-    min-height: 100vh;
-    min-height: 100dvh;
+    min-height: calc(100vh - var(--desktop-titlebar-height, 0px));
+    min-height: calc(100dvh - var(--desktop-titlebar-height, 0px));
     overflow-x: hidden;
     overflow-y: auto;
     padding: 0.65rem;

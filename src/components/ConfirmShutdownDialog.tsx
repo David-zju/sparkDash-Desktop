@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useModalPresence } from "../hooks/useModalPresence";
@@ -32,8 +33,9 @@ export function ConfirmShutdownDialog({
   onConfirm,
   title,
   description,
-  confirmLabel = "Shut down",
+  confirmLabel = tr("Shut down"),
 }: ConfirmShutdownDialogProps) {
+  useLocale();
   const [phrase, setPhrase] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -97,16 +99,14 @@ export function ConfirmShutdownDialog({
       >
         <div className="modal-sheet__header flex items-center gap-2 text-danger" id={titleId}>
           <PowerOffIcon className="h-4 w-4 shrink-0" />
-          <span>Danger zone — {title}</span>
+          <span>{tr("Danger zone — ")}{title}</span>
         </div>
 
         <div className="modal-sheet__body space-y-3">
           <p className="text-xs leading-relaxed text-muted">{description}</p>
 
           <div className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2.5">
-            <p className="text-[11px] font-medium text-danger">
-              This powers off hardware. Running containers and sessions will stop.
-            </p>
+            <p className="text-[11px] font-medium text-danger">{tr("This powers off hardware. Running containers and sessions will stop.")}</p>
           </div>
 
           <label className="flex cursor-pointer items-start gap-2.5 text-xs text-text">
@@ -117,13 +117,11 @@ export function ConfirmShutdownDialog({
               onChange={(e) => setAcknowledged(e.target.checked)}
               className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[var(--color-danger)]"
             />
-            <span>I understand this cannot be undone from the dashboard.</span>
+            <span>{tr("I understand this cannot be undone from the dashboard.")}</span>
           </label>
 
           <div>
-            <label className="mb-1 block text-xs text-muted">
-              Type <span className="font-mono text-danger">{CONFIRM_PHRASE}</span> to confirm
-            </label>
+            <label className="mb-1 block text-xs text-muted">{tr("Type ")}<span className="font-mono text-danger">{CONFIRM_PHRASE}</span>{tr(" to confirm")}</label>
             <input
               ref={inputRef}
               type="text"
@@ -151,16 +149,14 @@ export function ConfirmShutdownDialog({
               onClick={onClose}
               disabled={submitting}
               className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            >{tr("Cancel")}</button>
             <button
               type="button"
               onClick={() => void handleConfirm()}
               disabled={!canConfirm}
               className="rounded-md border border-danger/50 bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {submitting ? "Shutting down…" : confirmLabel}
+              {submitting ? tr("Shutting down…") : confirmLabel}
             </button>
           </div>
         </div>

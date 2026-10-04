@@ -23,6 +23,8 @@ export interface SparkConfig {
     host: string;
     user: string;
     auth: "key" | "pass";
+    port?: number;
+    identityFile?: string;
     /** Request-only: never returned by GET/list */
     password?: string;
     /** Response-only: true when a password is held in server memory */
@@ -46,6 +48,8 @@ export interface SparkConfig {
    * - worker: no local API (LLM card hidden, ports not probed)
    */
   role?: SparkRole;
+  /** Cluster display name, stored on its Head. */
+  clusterName?: string | null;
   /**
    * Legacy/derived: true when role is worker. Prefer `role`.
    * Kept so existing probe/card checks keep working.
@@ -87,6 +91,43 @@ export interface SparkConfig {
 }
 
 export type SparkRole = "head" | "worker" | "standalone";
+
+export interface FabricInterface {
+  name: string;
+  state: string;
+  carrier: boolean;
+  speedMbps: number | null;
+  addresses: { address: string; prefix: number }[];
+  rdmaDevices: string[];
+}
+export interface FabricLink {
+  a: string;
+  b: string;
+  status: "connected" | "partial" | "unreachable" | "unknown";
+  verified200G: boolean;
+  paths: {
+    key: string; aInterface: string; aIp: string; bInterface: string; bIp: string;
+    speedMbps: number | null; forward: boolean | null; reverse: boolean | null;
+    forwardReason: string; reverseReason: string;
+  }[];
+}
+export interface FabricDiscovery {
+  checkedAt: number;
+  nodes: { id: string; name: string; interfaces: FabricInterface[]; error: string | null }[];
+  links: FabricLink[];
+}
+export interface ClusterSetup {
+  name: string;
+  headId: string;
+  memberIds: string[];
+  previousHeadId?: string | null;
+}
+
+export interface MetricQuality {
+  observedAt: number | null;
+  status: "current" | "unknown" | "stale";
+  source: string;
+}
 
 // ─── Hermes Agent status ───────────────────────────────
 /** Opt-in Hermes Agent update monitoring state, pushed in every snapshot. */
@@ -239,6 +280,7 @@ export interface GpuDevice {
 
 // ─── CPU metrics ─────────────────────────────────────────
 export interface CpuMetrics {
+  usageAvailable?: boolean;
   usage: number;
   temperature: number;
   draw: number;
@@ -289,6 +331,8 @@ export interface NetworkMetrics {
 
 // ─── Unified memory metrics ──────────────────────────────
 export interface UnifiedMemoryMetrics {
+  attribution?: "estimated";
+  memoryType?: string;
   total: number;
   gpuUsed: number;
   cpuUsed: number;
@@ -297,13 +341,15 @@ export interface UnifiedMemoryMetrics {
   percentage: number;
   oomRisk: "low" | "medium" | "high";
   bandwidth: {
-    current: number;
+    current: number | null;
     peak: number;
   };
 }
 
 // ─── LLM metrics ─────────────────────────────────────────
 export interface LlmMetrics {
+  /** False when the server exposes no counters for passive token rates. */
+  liveRatesAvailable?: boolean;
   available: boolean;
   backend: "vllm" | "llama.cpp" | "sglang" | "ds4" | "exl3" | "q27" | "tensorfold" | null;
   modelId: string | null;
@@ -495,6 +541,7 @@ export interface SparkMetrics {
 
 // ─── Spark snapshot (server pushes this) ──────────────────
 export interface SparkSnapshot {
+  metricQuality?: Record<string, MetricQuality>;
   id: string;
   name: string;
   /** Unit type: spark (DGX Spark) or host (dedicated GPU Linux box). */
@@ -520,6 +567,7 @@ export interface SparkSnapshot {
    * takes priority over this in the UI.
    */
   workerDerivedLabel?: string | null;
+  clusterName?: string | null;
   /** Optional head Spark id when role is worker */
   workerHeadId?: string | null;
   /** Standalone: whether LLM is probed (head always true, worker always false) */
@@ -935,4 +983,27 @@ export interface ShowcaseListResponse {
 export interface ShowcaseStartResponse {
   sessionId: string;
   status: "running";
+}
+
+export interface FabricBenchmarkResult {
+  kind: "tcp" | "rdma";
+  direction: "forward" | "reverse" | "both";
+  status: "running" | "passed" | "failed" | "unavailable" | "cancelled";
+  gbps: number | null;
+  error: string | null;
+  logs: { side: string; code: number; stdout: string; stderr: string }[];
+}
+export interface FabricBenchmarkJob {
+  id: string;
+  status: "running" | "cancelling" | "completed" | "cancelled" | "failed";
+  phase: string;
+  startedAt: number;
+  finishedAt: number | null;
+  a: string;
+  b: string;
+  names: string[];
+  path: FabricLink["paths"][number] | null;
+  checks: { id: string; error?: string; tools: Record<string, { available: boolean; version: string | null; reason: string | null }>; rdma: { device: string; port: number; gid: number } | null }[];
+  results: FabricBenchmarkResult[];
+  error: string | null;
 }

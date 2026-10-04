@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 /**
  * FleetTokenTotals — Overview section with cumulative prompt/completion tokens
  * aggregated across all Sparks, grouped by model, plus a fleet-wide total.
@@ -66,6 +67,7 @@ export function aggregateModelTotals(
 }
 
 export function FleetTokenTotals() {
+  useLocale();
   const [series, setSeries] = useState<LlmTokenSeriesTotals[] | null>(null);
   const [range, setRange] = useState<LlmTokenRange>("all");
 
@@ -98,49 +100,45 @@ export function FleetTokenTotals() {
   return (
     <section className="panel p-4" aria-labelledby="fleet-token-totals-title">
       <div className="flex items-center justify-between gap-2">
-        <h2 id="fleet-token-totals-title" className="text-sm font-semibold text-text-strong">
-          LLM Token Totals
-        </h2>
+        <h2 id="fleet-token-totals-title" className="text-sm font-semibold text-text-strong">{tr("LLM Token Totals")}</h2>
         <div className="flex items-center gap-2">
           <span className="shrink-0 whitespace-nowrap text-[10px] text-muted">
-            {activeEndpoints} endpoint{activeEndpoints === 1 ? "" : "s"}
+            {tr(activeEndpoints === 1 ? "{0} endpoint" : "{0} endpoints", [activeEndpoints])}
           </span>
           <select
             value={range}
             onChange={(e) => setRange(e.target.value as LlmTokenRange)}
-            aria-label="Token totals time range"
+            aria-label={tr("Token totals time range")}
             className="rounded border border-border bg-surface-elevated text-text"
             style={{ height: "20px", padding: "0 4px", fontSize: "9px", width: "auto" }}
           >
             {RANGE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}
+                {tr(opt.label)}
               </option>
             ))}
           </select>
         </div>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-muted">
-          Cumulative tokens by model, whole fleet
-        </span>
+        <span className="text-[10px] text-muted">{tr("Cumulative tokens by model, whole fleet")}</span>
         <span className="shrink-0 whitespace-nowrap text-[10px] text-muted">
-          <span className="inline-block w-14 text-right">Cached</span>
+          <span className="inline-block w-14 text-right">{tr("Cached")}</span>
 
-          <span className="inline-block w-14 text-right">Prefill</span>
+          <span className="inline-block w-14 text-right">{tr("Prefill")}</span>
 
-          <span className="inline-block w-16 text-right">Generated</span>
+          <span className="inline-block w-16 text-right">{tr("Generated")}</span>
         </span>
       </div>
       <div className="mt-3 space-y-1">
         {rows.length === 0 ? (
-          <p className="text-[11px] text-muted">No tokens recorded in this period.</p>
+          <p className="text-[11px] text-muted">{tr("No tokens recorded in this period.")}</p>
         ) : (
           rows.map((row) => (
           <div
             key={row.modelId}
             className="flex items-center justify-between gap-2 text-[11px]"
-            title={`${row.promptTokens.toLocaleString()} prompt · ${row.cachedTokens.toLocaleString()} cached · ${(row.promptTokens - row.cachedTokens).toLocaleString()} prefill · ${row.completionTokens.toLocaleString()} generated · ${row.sparkCount} Spark${row.sparkCount === 1 ? "" : "s"}`}
+            title={tr("{0} prompt · {1} cached · {2} prefill · {3} generated · {4} Spark{5}", [row.promptTokens.toLocaleString(), row.cachedTokens.toLocaleString(), (row.promptTokens - row.cachedTokens).toLocaleString(), row.completionTokens.toLocaleString(), row.sparkCount, row.sparkCount === 1 ? "" : "s"])}
           >
             <span className="min-w-0 flex-1 truncate text-text" title={row.modelId}>
               {row.modelId}
@@ -166,7 +164,7 @@ export function FleetTokenTotals() {
         )}
       </div>
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2 text-[11px]">
-        <span className="uppercase tracking-wide text-muted">Total</span>
+        <span className="uppercase tracking-wide text-muted">{tr("Total")}</span>
         <span className="font-tabular">
           <span className="inline-block w-14 text-right text-muted">
             {totalCached > 0 ? formatTokensCompact(totalCached) : "—"}

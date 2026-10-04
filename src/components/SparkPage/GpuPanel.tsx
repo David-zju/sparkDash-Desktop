@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import type { GpuDevice, GpuMetrics } from "../../api/types";
 import { Sparkline } from "../ui/Sparkline";
 import { Panel } from "../ui/Panel";
@@ -9,6 +10,7 @@ import { formatMb } from "../../shared/formatBytes";
 interface GpuPanelProps {
   gpu: GpuMetrics | null;
   sparkId: string;
+  sharedMemory?: boolean;
   temperatureUnit: "celsius" | "fahrenheit";
   className?: string;
 }
@@ -25,7 +27,7 @@ function shortGpuName(name: string | null): string {
 
 function throttleChip(reason: string | undefined): { label: string; className: string } {
   const r = reason ?? "ok";
-  const label = r === "thermal" ? "Thermal" : r === "power" ? "Power" : r === "hw" ? "HW" : "OK";
+  const label = r === "thermal" ? tr("Thermal") : r === "power" ? tr("Power") : r === "hw" ? tr("HW") : tr("OK");
   const className =
     r === "thermal"
       ? "border-danger/40 bg-danger/15 text-danger"
@@ -46,6 +48,7 @@ function MetricRow({
   value: React.ReactNode;
   color?: string;
 }) {
+  useLocale();
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-muted">{label}</span>
@@ -71,6 +74,7 @@ function GpuDeviceRow({
   sparkId: string;
   temperatureUnit: "celsius" | "fahrenheit";
 }) {
+  useLocale();
   const usageHistory = useMetricsHistoryTail(sparkId, `gpu.${d.index}.usage`);
   const tempHistory = useMetricsHistoryTail(sparkId, `gpu.${d.index}.temp`);
   const temp = temperatureUnit === "fahrenheit" ? celsiusToFahrenheit(d.temperature) : d.temperature;
@@ -92,21 +96,21 @@ function GpuDeviceRow({
         </span>
       </div>
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="text-muted">Usage</span>
+        <span className="text-muted">{tr("Usage")}</span>
         <div className="flex items-center gap-2">
           <Sparkline data={usageHistory} color="var(--color-accent)" width={84} height={16} />
           <span className="font-tabular text-text">{d.usage}%</span>
         </div>
       </div>
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="text-muted">Temperature</span>
+        <span className="text-muted">{tr("Temperature")}</span>
         <div className="flex items-center gap-2">
           <Sparkline data={tempHistory} color={tempColor} width={84} height={16} />
           <span className="font-tabular" style={{ color: tempColor }}>{tempLabel}</span>
         </div>
       </div>
       <div className="flex justify-between gap-2 text-xs">
-        <span className="text-muted">Power</span>
+        <span className="text-muted">{tr("Power")}</span>
         <span className="font-tabular text-text">
           {d.power.draw}W / {d.power.limit}W
         </span>
@@ -122,7 +126,7 @@ function GpuDeviceRow({
         <div className="flex justify-between text-xs">
           <span className="text-muted">VRAM</span>
           <span className="font-tabular text-text">
-            {d.vram.used > 0 ? `${formatMb(d.vram.used)} used` : "—"}
+            {d.vram.used > 0 ? tr("{0} used", [formatMb(d.vram.used)]) : "—"}
           </span>
         </div>
       )}
@@ -130,9 +134,15 @@ function GpuDeviceRow({
   );
 }
 
-export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelProps) {
+export function GpuPanel({ gpu, sparkId, sharedMemory = false, temperatureUnit, className }: GpuPanelProps) {
+  useLocale();
   const tempHistory = useMetricsHistoryTail(sparkId, "gpu.temp");
   const usageHistory = useMetricsHistoryTail(sparkId, "gpu.usage");
+
+  if (!gpu) return <Panel title="GPU" bodyClassName="space-y-3">
+    <p className="text-sm text-muted">{tr("GPU metrics unavailable")}</p>
+    <p className="text-xs text-muted">{tr("Waiting for a current sample from the device.")}</p>
+  </Panel>;
 
   const temperature = gpu?.temperature ?? 0;
   const displayTemp = temperatureUnit === "fahrenheit" ? celsiusToFahrenheit(temperature) : temperature;
@@ -143,7 +153,6 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
 
   const vramUsed = gpu?.vram?.used ?? 0;
   const vramTotal = gpu?.vram?.total ?? 0;
-  const vramPct = gpu?.vram?.percentage ?? 0;
   const devices = gpu?.gpus ?? [];
   const multiGpu = devices.length > 1;
 
@@ -163,19 +172,19 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
       bodyClassName="space-y-3"
     >
       <MetricRow
-        label="Usage"
+        label={tr("Usage")}
         color="var(--color-accent)"
         spark={<Sparkline data={usageHistory} color="var(--color-accent)" width={180} />}
         value={<span className="text-text-strong">{usage}%</span>}
       />
       <MetricRow
-        label="Temperature"
+        label={tr("Temperature")}
         color={tempColor}
         spark={<Sparkline data={tempHistory} color={tempColor} width={180} />}
         value={<span className="text-text-strong">{tempLabel}</span>}
       />
       <div className="flex justify-between text-sm">
-        <span className="text-muted">{multiGpu ? "GPU Power (all cards)" : "GPU Power"}</span>
+        <span className="text-muted">{multiGpu ? tr("GPU Power (all cards)") : tr("GPU Power")}</span>
         <span className="font-tabular text-sm text-text">
           {powerDraw}W / {powerLimit}W
         </span>
@@ -187,12 +196,12 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
         const reason = t?.reason ?? "ok";
         const chipLabel =
           reason === "thermal"
-            ? "Thermal"
+            ? tr("Thermal")
             : reason === "power"
-              ? "Power"
+              ? tr("Power")
               : reason === "hw"
-                ? "HW"
-                : "OK";
+                ? tr("HW")
+                : tr("OK");
         const chipClass =
           reason === "thermal"
             ? "border-danger/40 bg-danger/15 text-danger"
@@ -215,7 +224,7 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
         return (
           <div className="space-y-1.5" title={t?.detail ?? undefined}>
             <div className="flex items-center justify-between gap-2 text-sm">
-              <span className="text-muted">Throttle</span>
+              <span className="text-muted">{tr("Throttle")}</span>
               <span
                 className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${chipClass}`}
               >
@@ -223,7 +232,7 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-muted">SM clock</span>
+              <span className="text-[10px] uppercase tracking-wide text-muted">{tr("SM clock")}</span>
               <span className="font-tabular text-xs text-text">{clockCaption}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-border">
@@ -242,8 +251,7 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
       {multiGpu && (
         <div className="space-y-3 border-t border-border pt-3">
           <div className="text-[10px] uppercase tracking-wide text-muted">
-            {devices.length} GPUs
-          </div>
+            {devices.length}{tr(" GPUs")}</div>
           {devices.map((d) => (
             <GpuDeviceRow
               key={d.uuid ?? d.index}
@@ -261,25 +269,28 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
           {vramTotal > 0 ? (
             <>
               <MetricBar
-                label={multiGpu ? "VRAM (all cards)" : "VRAM"}
+                label={sharedMemory ? tr("GPU-attributed memory (estimate)") : multiGpu ? tr("VRAM (all cards)") : "VRAM"}
                 value={vramUsed}
                 max={vramTotal}
                 caption={vramTotal > 0 ? `${formatMb(vramUsed).replace(/ (GB|MB)$/, "")} / ${formatMb(vramTotal)}` : "—"}
               />
               {gpu.vram.available > 0 && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted">Available</span>
+                  <span className="text-muted">{sharedMemory ? tr("Shared pool available") : tr("Available")}</span>
                   <span className="font-tabular text-text">{formatMb(gpu.vram.available)}</span>
                 </div>
               )}
             </>
           ) : (
             <div className="flex justify-between text-xs">
-              <span className="text-muted">VRAM</span>
+              <span className="text-muted">{sharedMemory ? tr("GPU-attributed memory (estimate)") : "VRAM"}</span>
               <span className="font-tabular text-text">
-                {vramUsed > 0 ? `${formatMb(vramUsed)} used` : "—"}
+                {vramUsed > 0 ? tr("{0} used", [formatMb(vramUsed)]) : "—"}
               </span>
             </div>
+          )}
+          {sharedMemory && (
+            <p className="text-xs text-muted">{tr("CPU and GPU share LPDDR5X memory. GPU process attribution is an estimate; the total is the shared pool, and system-wide usage is shown in Overview.")}</p>
           )}
         </div>
       )}
@@ -287,7 +298,7 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
       {(gpu?.nvErrNoMemory ?? 0) > 0 && (
         <div
           className="flex items-center justify-between text-sm"
-          title="NVRM kernel NV_ERR_NO_MEMORY lines since boot (journal). GPU memory allocation failures under pressure."
+          title={tr("NVRM kernel NV_ERR_NO_MEMORY lines since boot (journal). GPU memory allocation failures under pressure.")}
         >
           <span className="text-muted">NV_ERR_NO_MEMORY</span>
           <span className="font-tabular text-sm font-semibold text-danger">
@@ -299,7 +310,7 @@ export function GpuPanel({ gpu, sparkId, temperatureUnit, className }: GpuPanelP
       {/* Top GPU processes by VRAM usage */}
       {gpu && gpu.processes && gpu.processes.length > 0 && (
         <div className="space-y-1.5 border-t border-border pt-3">
-          <div className="text-[10px] uppercase tracking-wide text-muted">Processes</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted">{tr("Processes")}</div>
           {gpu.processes.map((proc) => (
             <div key={proc.pid} className="flex items-center justify-between gap-2 text-xs">
               <div className="flex min-w-0 flex-1 items-baseline gap-1.5">

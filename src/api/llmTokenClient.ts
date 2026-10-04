@@ -1,3 +1,4 @@
+import { isDesktop } from "../desktop";
 /**
  * Local-only API client for the llm-token-totals feature.
  * Sits outside src/api/client.ts so upstream merges never touch it.
@@ -7,7 +8,7 @@
 import type { LlmTokenRange, LlmTokenTotalsResponse } from "./llmTokenTypes";
 
 const TOKEN =
-  (typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
+  (!isDesktop && typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
 
 function authHeaders(): Record<string, string> {
   return TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {};

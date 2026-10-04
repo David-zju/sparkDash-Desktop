@@ -1,9 +1,10 @@
+import { isDesktop } from "../desktop";
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { SparkSnapshot, WsSnapshot } from "../api/types";
 import { ingestSnapshots } from "./metricsStore";
 import { OVERVIEW_ID } from "../constants";
 
-const TOKEN = (typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
+const TOKEN = (!isDesktop && typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
 const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws${TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : ""}`;
 const RECONNECT_DELAY = 2000;
 

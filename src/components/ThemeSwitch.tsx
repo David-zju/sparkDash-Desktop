@@ -1,3 +1,5 @@
+import { translate as tr, useLocale } from "../i18n";
+import { preferences } from "../desktop";
 import { useState, useEffect } from "react";
 import { SunIcon, SunDimIcon, MoonIcon, MoonStarIcon } from "./ui/icons";
 
@@ -9,18 +11,19 @@ const STORAGE_KEY = "sparkdash-theme";
 
 function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "dark";
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = preferences.getItem(STORAGE_KEY);
   if ((stored as Theme | null) && THEME_CYCLE.includes(stored as Theme)) return stored as Theme;
   return "dark";
 }
 
 export function ThemeSwitch() {
+  useLocale();
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem(STORAGE_KEY, theme);
-  }, [theme]);
+    preferences.setItem(STORAGE_KEY, theme);
+  }, [tr(theme)]);
 
   const toggle = () =>
     setTheme((t) => {
@@ -42,8 +45,8 @@ export function ThemeSwitch() {
       type="button"
       onClick={toggle}
       className="icon-circle"
-      title={`Theme: ${theme}`}
-      aria-label={`Switch theme (currently ${theme})`}
+      title={tr("Theme: {0}", [tr(theme)])}
+      aria-label={tr("Switch theme (currently {0})", [tr(theme)])}
     >
       <Icon className="h-3.5 w-3.5" />
     </button>

@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import { useEffect, useState } from "react";
 import { fetchLlmDaily } from "../../api/client";
 import type { LlmDailyDay } from "../../api/types";
@@ -18,6 +19,7 @@ export function LlmDailyChart({
   sparkId: string;
   llmPort: number;
 }) {
+  useLocale();
   const [days, setDays] = useState<LlmDailyDay[] | null>(null);
 
   useEffect(() => {
@@ -62,22 +64,19 @@ export function LlmDailyChart({
   return (
     <div className="border-t border-border pt-3 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-muted">
-          Daily peak tok/s
-        </span>
+        <span className="text-[10px] uppercase tracking-wide text-muted">{tr("Daily peak tok/s")}</span>
         <span className="text-[10px] text-muted">
-          {hasSplit ? "decode · uncached prefill" : "decode · prefill"} · 14d
-        </span>
+          {hasSplit ? tr("decode · uncached prefill") : tr("decode · prefill")}{tr(" · 14d")}</span>
       </div>
       {!busy ? (
-        <p className="text-[10px] text-muted">No busy samples in the last 14 days.</p>
+        <p className="text-[10px] text-muted">{tr("No busy samples in the last 14 days.")}</p>
       ) : (
         <svg
           width={CHART_W}
           height={CHART_H}
           className="block max-w-full"
           role="img"
-          aria-label="Daily peak decode and prefill tokens per second"
+          aria-label={tr("Daily peak decode and prefill tokens per second")}
         >
           {days.map((d, i) => {
             const x0 = i * slot;
@@ -86,12 +85,12 @@ export function LlmDailyChart({
             const prefH = (pref / max) * (CHART_H - 2);
             const title = [
               d.date,
-              `decode peak ${fmt(d.decodeMax)} (avg ${fmt(d.decodeAvg)})`,
+              tr("decode peak {0} (avg {1})", [fmt(d.decodeMax), fmt(d.decodeAvg)]),
               hasSplit
-                ? `uncached prefill peak ${fmt(d.uncachedPrefillMax)} (avg ${fmt(d.uncachedPrefillAvg)})`
-                : `prefill peak ${fmt(d.prefillMax)} (avg ${fmt(d.prefillAvg)})`,
+                ? tr("uncached prefill peak {0} (avg {1})", [fmt(d.uncachedPrefillMax), fmt(d.uncachedPrefillAvg)])
+                : tr("prefill peak {0} (avg {1})", [fmt(d.prefillMax), fmt(d.prefillAvg)]),
               hasSplit
-                ? `cached prefill peak ${fmt(d.cachedPrefillMax)} (avg ${fmt(d.cachedPrefillAvg)})`
+                ? tr("cached prefill peak {0} (avg {1})", [fmt(d.cachedPrefillMax), fmt(d.cachedPrefillAvg)])
                 : null,
             ]
               .filter(Boolean)

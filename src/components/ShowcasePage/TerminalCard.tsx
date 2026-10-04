@@ -1,3 +1,4 @@
+import { translate as tr, useLocale } from "../../i18n";
 import { useEffect, useRef, useState } from "react";
 
 export interface TerminalCardProps {
@@ -38,6 +39,7 @@ export function TerminalCard({
   onCopy,
   copied,
 }: TerminalCardProps) {
+  useLocale();
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const [reasoningOpen, setReasoningOpen] = useState(true);
@@ -58,14 +60,14 @@ export function TerminalCard({
     <article className="showcase-term">
       <header className="showcase-term__header">
         <span className="showcase-term__label" title={label}>
-          {label || "Terminal"}
+          {label || tr("Terminal")}
         </span>
-        <span className={`showcase-term__status ${statusClass(status)}`}>{status}</span>
+        <span className={`showcase-term__status ${statusClass(status)}`}>{tr(status)}</span>
         <span
           className="showcase-term__tps font-tabular"
           title={
             peakTokPerSec > 0 || liveTokPerSec > 0
-              ? `Live ${liveTokPerSec.toFixed(1)} tok/s · peak ${Math.max(peakTokPerSec, liveTokPerSec).toFixed(1)} tok/s`
+              ? tr("Live {0} tok/s · peak {1} tok/s", [liveTokPerSec.toFixed(1), Math.max(peakTokPerSec, liveTokPerSec).toFixed(1)])
               : undefined
           }
         >
@@ -74,8 +76,7 @@ export function TerminalCard({
               {(liveTokPerSec > 0 ? liveTokPerSec : peakTokPerSec).toFixed(0)} tok/s
               {peakTokPerSec > 0 && (
                 <span className="showcase-term__tps-peak">
-                  {" "}
-                  peak {Math.max(peakTokPerSec, liveTokPerSec).toFixed(0)}
+                  {" "}{tr("peak ")}{Math.max(peakTokPerSec, liveTokPerSec).toFixed(0)}
                 </span>
               )}
             </>
@@ -88,9 +89,9 @@ export function TerminalCard({
             type="button"
             className="showcase-term__copy"
             onClick={onCopy}
-            title="Copy this terminal"
+            title={tr("Copy this terminal")}
           >
-            {copied ? "Copied" : "Copy"}
+            {copied ? tr("Copied") : tr("Copy")}
           </button>
         )}
       </header>
@@ -105,7 +106,7 @@ export function TerminalCard({
         }}
       >
         {empty && status === "pending" && (
-          <pre className="showcase-term__answer">Waiting…</pre>
+          <pre className="showcase-term__answer">{tr("Waiting…")}</pre>
         )}
         {hasReasoning && (
           <div className="showcase-term__reasoning">
@@ -115,10 +116,8 @@ export function TerminalCard({
               aria-expanded={reasoningOpen}
               onClick={() => setReasoningOpen((o) => !o)}
             >
-              {reasoningOpen ? "▾" : "▸"} Thinking
-              <span className="showcase-term__reasoning-meta">
-                {reasoning.length.toLocaleString()} chars
-              </span>
+              {reasoningOpen ? "▾" : "▸"}{tr(" Thinking")}<span className="showcase-term__reasoning-meta">
+                {reasoning.length.toLocaleString()}{tr(" chars")}</span>
             </button>
             {reasoningOpen && (
               <pre className="showcase-term__reasoning-text">{reasoning}</pre>

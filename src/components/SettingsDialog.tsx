@@ -1,3 +1,4 @@
+import { translate as tr, useLocale, setLocale, type Locale } from "../i18n";
 import { useEffect, useState } from "react";
 import { fetchSettings, updateSettings } from "../api/client";
 import type { Settings } from "../api/types";
@@ -28,6 +29,7 @@ const POLL_PRESETS = [
 ];
 
 export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) {
+  const locale = useLocale();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,16 +98,31 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
       }}
     >
       <div className="settings-panel w-full max-w-sm">
-        <h2 className="shrink-0 px-6 pt-6 text-sm font-semibold text-text-strong">Settings</h2>
+        <h2 className="shrink-0 px-6 pt-6 text-sm font-semibold text-text-strong">{tr("Settings")}</h2>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-        {loading && <p className="text-xs text-muted">Loading…</p>}
+        <label className="mb-4 block text-xs text-muted">
+          {tr("Language")}
+          <select
+            aria-label={tr("Language")}
+            value={locale}
+            onChange={(event) => {
+              try { setLocale(event.target.value as Locale); }
+              catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+            }}
+            className="mt-1.5 w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text"
+          >
+            <option value="zh-CN">{tr("简体中文")}</option>
+            <option value="en">{tr("English")}</option>
+          </select>
+        </label>
+        {loading && <p className="text-xs text-muted">{tr("Loading…")}</p>}
 
         {settings && !loading && (
           <div className="space-y-4">
             {/* Poll interval */}
             <div>
-              <label className="mb-2 block text-xs text-muted">Poll interval</label>
+              <label className="mb-2 block text-xs text-muted">{tr("Poll interval")}</label>
               <div className="flex gap-2">
                 {POLL_PRESETS.map((preset) => (
                   <button
@@ -126,7 +143,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
 
             {/* Default LLM port */}
             <div>
-              <label className="mb-1 block text-xs text-muted">Default LLM port</label>
+              <label className="mb-1 block text-xs text-muted">{tr("Default LLM port")}</label>
               <input
                 type="number"
                 min={1}
@@ -138,9 +155,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                 }}
                 className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
               />
-              <p className="mt-1 text-[10px] text-muted">
-                Pre-filled when adding a new Spark (1–65535)
-              </p>
+              <p className="mt-1 text-[10px] text-muted">{tr("Pre-filled when adding a new Spark (1–65535)")}</p>
             </div>
 
             {/* Auto-hide offline */}
@@ -160,9 +175,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                       settings.autoHideOffline ? "translate-x-4" : "translate-x-0"
                     }`}
                   />
-                </button>
-                Auto-hide offline Sparks on Overview
-              </label>
+                </button>{tr("Auto-hide offline Sparks on Overview")}</label>
             </div>
 
             {/* Hide worker nodes */}
@@ -184,11 +197,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Hide worker nodes</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Removes Worker-role Sparks from Overview and the tab bar. Direct
-                    URLs and batch power / Hermes actions still include them.
-                  </span>
+                  <span className="block text-text">{tr("Hide worker nodes")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Removes Worker-role Sparks from Overview and the tab bar. Direct URLs and batch power / Hermes actions still include them.")}</span>
                 </span>
               </label>
             </div>
@@ -214,11 +224,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show search and status filters</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview “Search up to 12 units” field and status dropdown
-                    (All / Online / Offline / Issues). One switch for both. Off by default.
-                  </span>
+                  <span className="block text-text">{tr("Show search and status filters")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Overview “Search up to 12 units” field and status dropdown (All / Online / Offline / Issues). One switch for both. Off by default.")}</span>
                 </span>
               </label>
             </div>
@@ -242,12 +249,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Benchmark share image</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    On by default. The decode/prefill <em>Copy results</em> button gains a caret with
-                    <em> Copy as text</em> / <em>Copy as image</em> (a share card). Turn it off to keep
-                    the plain text button.
-                  </span>
+                  <span className="block text-text">{tr("Benchmark share image")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("On by default. The decode/prefill ")}<em>{tr("Copy results")}</em>{tr(" button gains a caret with")}<em>{tr(" Copy as text")}</em> / <em>{tr("Copy as image")}</em>{tr(" (a share card). Turn it off to keep the plain text button.")}</span>
                 </span>
               </label>
             </div>
@@ -271,10 +274,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show Fleet Energy</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview card with rolling fleet power estimates. Off by default.
-                  </span>
+                  <span className="block text-text">{tr("Show Fleet Energy")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Overview card with rolling fleet power estimates. Off by default.")}</span>
                 </span>
               </label>
             </div>
@@ -298,10 +299,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show LLM Token Totals</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview card with cumulative prompt/generated tokens per model. Off by default.
-                  </span>
+                  <span className="block text-text">{tr("Show LLM Token Totals")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Overview card with cumulative prompt/generated tokens per model. Off by default.")}</span>
                 </span>
               </label>
             </div>
@@ -327,11 +326,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show active fleet exceptions</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview strip for offline hosts, GPU throttle, disk, LLM, and
-                    Tailnet alerts. Off by default.
-                  </span>
+                  <span className="block text-text">{tr("Show active fleet exceptions")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Overview strip for offline hosts, GPU throttle, disk, LLM, and Tailnet alerts. Off by default.")}</span>
                 </span>
               </label>
             </div>
@@ -357,18 +353,15 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Enable debug traces for Benchmark runs</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Stores prompts, HTTP/completion IDs, content previews, and GPU
-                    samples in bench history. Off by default — larger history files.
-                  </span>
+                  <span className="block text-text">{tr("Enable debug traces for Benchmark runs")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Stores prompts, HTTP/completion IDs, content previews, and GPU samples in bench history. Off by default — larger history files.")}</span>
                 </span>
               </label>
             </div>
 
             {/* Temperature unit */}
             <div>
-              <label className="text-xs text-muted">Temperature unit</label>
+              <label className="text-xs text-muted">{tr("Temperature unit")}</label>
               <div className="mt-1.5 flex gap-2">
                 <button
                   type="button"
@@ -418,10 +411,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Compact UI</span>
-                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Tighter spacing, smaller radius, and reduced font size — fits more Sparks on a single screen.
-                  </span>
+                  <span className="block text-text">{tr("Compact UI")}</span>
+                  <span className="mt-0.5 block text-[10px] leading-snug text-muted">{tr("Tighter spacing, smaller radius, and reduced font size — fits more Sparks on a single screen.")}</span>
                 </span>
               </label>
             </div>
@@ -463,16 +454,14 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
             type="button"
             onClick={onClose}
             className="min-h-11 rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted hover:bg-surface-hover"
-          >
-            Cancel
-          </button>
+          >{tr("Cancel")}</button>
           <button
             type="button"
             onClick={handleSave}
             disabled={saving || !settings || !dirty}
             className="min-h-11 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? tr("Saving...") : tr("Save")}
           </button>
         </div>
       </div>

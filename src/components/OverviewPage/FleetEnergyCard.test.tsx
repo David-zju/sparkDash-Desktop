@@ -40,7 +40,8 @@ describe("FleetEnergyCard states", () => {
     fetchEnergy.mockResolvedValue(energy());
     const { container } = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(container.textContent).toContain("Estimated, not wall-metered");
+    expect(container.textContent).toContain("DGX Spark estimate");
+    expect(container.textContent).toContain("General GPU hosts are unsupported");
     // coverage24hMs is full-fleet wall-clock coverage capped at DAY_MS, so a
     // full window must read 100.0% regardless of node count.
     expect(container.textContent).toContain("24h coverage 100.0%");
