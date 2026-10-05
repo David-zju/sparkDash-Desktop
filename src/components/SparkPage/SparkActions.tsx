@@ -144,7 +144,16 @@ export function SparkActions({ spark, onEdit, className }: SparkActionsProps) {
           >
             <PowerOnIcon className="h-3 w-3" />{tr("Wake")}</button>
         )}
-        {online && <button type="button" disabled={powerLoading} onClick={() => { setPowerAction("reboot"); setShutdownOpen(true); }} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[11px] text-muted hover:text-text"><RotateIcon className="h-3 w-3" />{tr("Reboot")}</button>}
+        {online && (
+          <button
+            type="button"
+            onClick={() => { setPowerAction("reboot"); setShutdownOpen(true); }}
+            disabled={powerLoading}
+            title={tr("Reboot using the system power command")}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-[11px] text-muted transition-colors hover:bg-warning/20 hover:text-warning disabled:opacity-50"
+          >
+            <RotateIcon className="h-3 w-3" />{tr("Reboot")}</button>
+        )}
         {onEdit && (
           <button
             type="button"
@@ -153,7 +162,14 @@ export function SparkActions({ spark, onEdit, className }: SparkActionsProps) {
           >
             <EditIcon className="h-3 w-3" />{tr("Edit")}</button>
         )}
-        <button type="button" onClick={() => setSudoOpen(true)} className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-[11px] text-muted hover:text-text">{tr("Sudo authentication")}</button>
+        {/* Local hosts only support passwordless sudo, so there is nothing to save. */}
+        {!spark.isLocal && (
+          <button
+            type="button"
+            onClick={() => setSudoOpen(true)}
+            className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-[11px] text-muted hover:bg-surface-hover hover:text-text transition-colors"
+          >{tr("Sudo authentication")}</button>
+        )}
       </div>
       <ConfirmShutdownDialog open={sudoOpen} onClose={() => setSudoOpen(false)} onConfirm={() => {}}
         manageCredentials targets={[{ id: spark.id, name: spark.name }]} title={tr("Sudo authentication")}

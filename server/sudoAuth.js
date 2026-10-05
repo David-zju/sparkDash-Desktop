@@ -18,7 +18,6 @@ export function sudoInvocation(password, action) {
   };
 }
 export async function checkPowerAuth(spark, password, exec = sshExec) {
-  if (spark.isLocal) return { status: "ready" };
   const present = await exec(spark, "if command -v systemctl >/dev/null 2>&1; then echo present; else echo missing; fi");
   if (present !== "present") return { status: "command_missing", error: "systemctl is not available on this device" };
   const { command, options } = sudoInvocation(password);
@@ -30,7 +29,14 @@ export async function authenticatedPowerAction(spark, action, password, exec = s
   // the final authority on command-specific policy, regardless of preflight.
   const { command, options } = sudoInvocation(password, action);
   try { await exec(spark, command, options); }
-  catch { throw new Error("Power command result is unconfirmed; check sudo permissions and device state before retrying"); }
+  catch (error) {
+    // A remote non-zero status other than ssh's 255 means sudo or systemctl
+    // refused the request; transport loss or timeout leaves the result unknown.
+    if (Number.isInteger(error?.exitCode) && error.exitCode !== 255 && !error.timedOut) {
+      throw new Error("Power command was rejected; check sudo permissions and shutdown inhibitors on the device");
+    }
+    throw new Error("Power command result is unconfirmed; check sudo permissions and device state before retrying");
+  }
   return action === "reboot" ? "Reboot requested" : "Shutdown requested";
 }
 export async function verifySudoPassword(spark, password, exec = sshExec) {

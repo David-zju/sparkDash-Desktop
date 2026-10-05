@@ -72,3 +72,12 @@ it('closing while status loads does not start a remote authentication check', as
   await act(async () => finish({ hasPassword: false }));
   expect(checkPowerAuth).not.toHaveBeenCalled();
 });
+
+it('hosts without password support show the policy error but no password controls', async () => {
+  vi.mocked(checkPowerAuth).mockResolvedValue({ status: 'password_required', hasPassword: false, passwordSupported: false, error: 'Passwordless sudo for systemctl poweroff/reboot is required on this host' });
+  render(<Harness/>); await flush();
+  expect(document.body.textContent).toContain('Passwordless sudo for systemctl poweroff/reboot is required on this host');
+  expect(document.querySelector('input[type="password"]')).toBeNull();
+  expect(button('Verify and save encrypted')).toBeUndefined();
+  expect(document.querySelector('output')?.textContent).toBe('blocked:0');
+});

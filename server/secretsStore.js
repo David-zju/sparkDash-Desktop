@@ -10,7 +10,8 @@
  *   {
  *     version: 3,
  *     secrets: { [sparkId]: "<encrypted ssh password>" },
- *     llmApiKeys: { [sparkId]: "<encrypted JSON { \"8000\": \"sk-…\" }>" }
+ *     llmApiKeys: { [sparkId]: "<encrypted JSON { \"8000\": \"sk-…\" }>" },
+ *     sudoPasswords: { [sparkId]: "<encrypted JSON { password, target }>" }
  *   }
  *
  * v1/v2 files still load; rewritten as v3 on next save.
@@ -124,6 +125,7 @@ function decrypt(blobB64, key) {
  * @returns {{
  *   passwords: Map<string, string>,
  *   llmApiKeys: Map<string, Record<string, string>>,
+ *   sudoPasswords: Map<string, string>,
  * }}
  */
 export function loadSecrets() {
@@ -152,10 +154,6 @@ export function loadSecrets() {
     // An empty store has nothing to decrypt and does not need Keychain access.
     const hasCiphertext = Object.keys(data?.secrets || {}).length > 0 || Object.keys(data?.llmApiKeys || {}).length > 0 || Object.keys(data?.sudoPasswords || {}).length > 0;
     const key = hasCiphertext ? resolveKey() : null;
-    for (const [id, blob] of Object.entries(data.sudoPasswords || {})) {
-      try { sudoPasswords.set(id, decrypt(blob, key)); }
-      catch { throw new Error("Cannot decrypt saved sudo credentials; original file preserved"); }
-    }
     const entries = data?.secrets || {};
     if (typeof entries === "object" && entries !== null) {
       let failed = 0;
@@ -220,6 +218,26 @@ export function loadSecrets() {
         );
       }
     }
+
+    // Loaded last and per entry: a bad sudo blob must not discard SSH passwords
+    // or API keys, which the next save would then erase from disk.
+    const sudoEntries = data?.sudoPasswords || {};
+    if (typeof sudoEntries === "object" && sudoEntries !== null) {
+      let failed = 0;
+      for (const [id, blob] of Object.entries(sudoEntries)) {
+        if (!id || typeof blob !== "string") continue;
+        try {
+          sudoPasswords.set(id, decrypt(blob, key));
+        } catch {
+          failed += 1;
+          console.error(`[secretsStore] Failed to decrypt sudo password for ${id} (wrong/missing key?)`);
+        }
+      }
+      if (failed > 0) {
+        if (process.env.SPARKDASH_DESKTOP === "1") throw new Error("Cannot decrypt saved sudo credentials; original file preserved");
+        console.warn(`[secretsStore] ${failed} sudo password(s) could not be decrypted — re-enter via Sudo authentication`);
+      }
+    }
   } catch (err) {
     if (process.env.SPARKDASH_DESKTOP === "1") throw err;
     console.error(`[secretsStore] Failed to load secrets: ${err.message}`);
@@ -234,6 +252,7 @@ export function loadSecrets() {
  *
  * @param {Map<string, string>} passwords
  * @param {Map<string, Record<string, string>>} [llmApiKeys]
+ * @param {Map<string, string>} [sudoPasswords]
  */
 export function saveSecrets(passwords, llmApiKeys = new Map(), sudoPasswords = new Map()) {
   const hasPasswords = passwords && passwords.size > 0;
@@ -290,6 +309,7 @@ export function saveSecrets(passwords, llmApiKeys = new Map(), sudoPasswords = n
   const keyCount = Object.keys(llmOut).length;
   console.log(
     `[secretsStore] Saved ${Object.keys(secrets).length} SSH password(s)` +
-      (keyCount ? `, ${keyCount} LLM API key bundle(s)` : "")
+      (keyCount ? `, ${keyCount} LLM API key bundle(s)` : "") +
+      (sudoPasswords.size ? `, ${sudoPasswords.size} sudo password(s)` : "")
   );
 }

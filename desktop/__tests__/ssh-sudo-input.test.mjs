@@ -15,7 +15,7 @@ test('SSH forwards sudo credentials on stdin and suppresses sensitive remote err
     child.stdin.on('data', data => { input += data; });
     child.stdin.on('finish', () => {
       calls.push({ file, args, options, input });
-      queueMicrotask(() => { callback(fail ? new Error('secret') : null, '', fail ? 'secret' : ''); child.emit('close', fail ? 1 : 0); });
+      queueMicrotask(() => { callback(fail ? Object.assign(new Error('secret'), { code: 1 }) : null, '', fail ? 'secret' : ''); child.emit('close', fail ? 1 : 0); });
     });
     return child;
   });
@@ -28,5 +28,5 @@ test('SSH forwards sudo credentials on stdin and suppresses sensitive remote err
   assert.equal(calls[0].args.join(' ').includes('secret'), false);
   assert.equal(JSON.stringify(calls[0].options).includes('secret'), false);
   fail = true;
-  await assert.rejects(sshExec(spark, "sudo -S -k -p '' -v", options), err => !err.message.includes('secret'));
+  await assert.rejects(sshExec(spark, "sudo -S -k -p '' -v", options), err => !err.message.includes('secret') && err.exitCode === 1 && err.timedOut === false);
 });

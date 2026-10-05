@@ -40,3 +40,9 @@ test('credential save checks sudo only', async () => {
   await verifySudoPassword(spark, 'secret', async (_, cmd, options) => calls.push({ cmd, options }));
   assert.equal(calls[0].cmd, "sudo -S -k -p '' -v");
 });
+test('a remote refusal is reported as rejected, transport loss or timeout as unconfirmed', async () => {
+  const failWith = fields => async () => { throw Object.assign(new Error('ssh failed'), fields); };
+  await assert.rejects(authenticatedPowerAction(spark, 'shutdown', 'secret', failWith({ exitCode: 1, timedOut: false })), /rejected/);
+  await assert.rejects(authenticatedPowerAction(spark, 'shutdown', 'secret', failWith({ exitCode: 255, timedOut: false })), /unconfirmed/);
+  await assert.rejects(authenticatedPowerAction(spark, 'reboot', 'secret', failWith({ exitCode: null, timedOut: true })), /unconfirmed/);
+});

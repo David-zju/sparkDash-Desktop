@@ -66,21 +66,22 @@ export function SudoAuthenticationFields({ targets, disabled, onChange, onReady,
     {targets.map(target => {
       const entry = entries[target.id];
       const busy = disabled || !entry || entry.busy;
+      const passwordSupported = entry?.status?.passwordSupported !== false;
       return <div key={target.id} className="rounded border border-border p-3 space-y-2">
         <div className="text-xs font-medium">{target.name}</div>
         <p className="text-xs text-muted" role="status">{!entry ? tr("Checking authentication…") : entry.error || (entry.status?.status === "ready" ? tr("Sudo authentication ready") : tr(entry.status?.error || "Sudo authentication required"))}</p>
-        {entry?.status?.hasPassword && <div className="flex items-center gap-2 text-xs">
+        {passwordSupported && entry?.status?.hasPassword && <div className="flex items-center gap-2 text-xs">
           <span>{tr("Sudo password saved")}</span>
           <button type="button" disabled={busy} onClick={() => void act(target.id, "forget")}>{tr("Forget saved sudo password")}</button>
         </div>}
-        <label className="block text-xs">{tr("Sudo password for {0}", [target.name])}
+        {passwordSupported && <label className="block text-xs">{tr("Sudo password for {0}", [target.name])}
           <input type="password" autoComplete="off" disabled={busy} value={entry?.password || ""}
             className="mt-1 w-full rounded border border-border bg-surface-elevated px-2 py-1"
             onChange={event => setEntries(prev => ({ ...prev, [target.id]: { ...prev[target.id], password: event.target.value, status: prev[target.id]?.status ? { ...prev[target.id].status!, status: "password_required" } : undefined, error: undefined } }))} />
-        </label>
+        </label>}
         <div className="flex gap-3 text-xs">
           <button type="button" disabled={busy} onClick={() => void act(target.id, "check")}>{tr("Verify permissions")}</button>
-          <button type="button" disabled={busy || !entry?.password} onClick={() => void act(target.id, "save")}>{tr("Verify and save encrypted")}</button>
+          {passwordSupported && <button type="button" disabled={busy || !entry?.password} onClick={() => void act(target.id, "save")}>{tr("Verify and save encrypted")}</button>}
         </div>
       </div>;
     })}

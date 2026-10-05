@@ -507,6 +507,13 @@ export function OverviewPage({
     }
   }
 
+  /** Snapshot the online set when the dialog opens; that list is what gets confirmed and sent. */
+  function openPowerDialog(action: "shutdown" | "reboot") {
+    setPowerTargets(sparks.filter((s) => s.online).map((s) => ({ id: s.id, name: s.name })));
+    setPowerAction(action);
+    setShutdownOpen(true);
+  }
+
   async function handleShutdownAll(sudoPasswords: Record<string, string>, targets: Record<string, string>) {
     if (powerTargets.length === 0) return;
     setBatchLoading(true);
@@ -651,13 +658,20 @@ export function OverviewPage({
                 <PowerOnIcon className="h-3 w-3" />{tr("Wake All")}</button>
               <button
                 type="button"
-                onClick={() => { setPowerTargets(sparks.filter(s => s.online).map(s => ({ id: s.id, name: s.name }))); setPowerAction("shutdown"); setShutdownOpen(true); }}
+                onClick={() => openPowerDialog("shutdown")}
                 disabled={batchLoading || onlineShutdownCount === 0}
                 title={tr("Shut down all online Sparks")}
                 className="flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:bg-danger/20 hover:text-danger disabled:opacity-50"
               >
                 <PowerOffIcon className="h-3 w-3" />{tr("Shutdown All")}</button>
-              <button type="button" disabled={batchLoading || onlineShutdownCount === 0} onClick={() => { setPowerTargets(sparks.filter(s => s.online).map(s => ({ id: s.id, name: s.name }))); setPowerAction("reboot"); setShutdownOpen(true); }} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[11px] text-muted hover:text-text disabled:opacity-50"><RotateIcon className="h-3 w-3" />{tr("Reboot All")}</button>
+              <button
+                type="button"
+                onClick={() => openPowerDialog("reboot")}
+                disabled={batchLoading || onlineShutdownCount === 0}
+                title={tr("Reboot all online Sparks")}
+                className="flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:bg-warning/20 hover:text-warning disabled:opacity-50"
+              >
+                <RotateIcon className="h-3 w-3" />{tr("Reboot All")}</button>
             </div>
           )}
           <span className="online-chip">

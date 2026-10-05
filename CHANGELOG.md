@@ -9,7 +9,12 @@ Format: version sections are listed newest first.
 
 ## [Unreleased]
 
+### Changed
+- **Shutdown and reboot use `systemctl` with separate sudo credentials.** Power actions run `sudo systemctl poweroff` / `sudo systemctl reboot` over SSH; the `/usr/local/bin/spark-shutdown` helper is no longer used. A sudo password can be entered once in the confirmation dialog or verified and saved encrypted per device, and is dropped when the SSH host, user or port changes. Reboot and Reboot All are new. **Migration:** a dashboard running on the Spark itself needs passwordless sudo for `systemctl poweroff` and/or `systemctl reboot`; a sudoers rule scoped to `spark-shutdown` no longer applies.
+
 ### Fixed
+- **Power errors.** A request that sudo or systemctl refused is reported as rejected; only a dropped connection or timeout is reported as unconfirmed. The local host's preflight now asks sudo instead of always reporting ready.
+- **Credential loading.** An undecryptable saved sudo password no longer discards the SSH passwords and LLM API keys loaded from the same file, which the next save would have erased.
 - **Byte rates and memory sizes.** A transfer of 1023.95 KiB/s was labeled `1024.0 KB/s`, and 1023.5 MiB of RAM or VRAM was labeled `1024 MB` on the device panels and the Overview card. Both roll into the next unit: `1.0 MB/s` and `1.0 GB`. A 512 MB reading stays `512 MB`.
 - **Benchmark duration.** A run of 119.5 seconds was labeled `1m 60s` on the decode dialog, the prefill dialog, and the share card. It now reads `2m 0s`. 59.95 seconds was `60.0 s` and is now `1m 0s`. A 27.8 second run is unchanged.
 

@@ -20,7 +20,7 @@ import { authorizeUpgrade, configuredToken, createAuthMiddleware, requireRemoteA
 import { inspectHealth } from "./health.js";
 import { getSettings, updateSettings, loadSettings } from "./settings.js";
 import { broadcastForLanIp, effectiveMac, normalizeMac, sendWol } from "./wol.js";
-import { spawnLocalPower } from "./shutdown.js";
+import { checkLocalPower, spawnLocalPower } from "./shutdown.js";
 import { checkPowerAuth, authenticatedPowerAction, verifySudoPassword } from "./sudoAuth.js";
 import {
   decodeBenchManager,
@@ -67,7 +67,7 @@ const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), 
 // Default to loopback. Direct non-loopback binds fail closed because this release
 // does not authenticate LAN clients. Use an SSH tunnel, authenticated reverse
 // proxy, or Tailscale Serve (docs/REMOTE-ACCESS.md).
-export function createBackend({ monitorFactory = (spark, options) => new SparkMonitor(spark, options), prepareCredentials = async () => {}, fabricDiscovery = discoverFabric, fabricBenchmark = new FabricBenchmark(), powerExec = sshExec } = {}) {
+export function createBackend({ monitorFactory = (spark, options) => new SparkMonitor(spark, options), prepareCredentials = async () => {}, fabricDiscovery = discoverFabric, fabricBenchmark = new FabricBenchmark(), powerExec = sshExec, localPower = spawnLocalPower, localPowerCheck = checkLocalPower } = {}) {
 const desktop = process.env.SPARKDASH_DESKTOP === "1";
 const BIND_HOST = desktop ? "127.0.0.1" : process.env.BIND_HOST || "127.0.0.1";
 const PORT = desktop ? 0 : parseInt(process.env.PORT || "5555", 10);
@@ -1520,14 +1520,10 @@ app.delete("/api/sparks/:id/llm/showcase/:sessionId", (req, res) => {
 // ─── Power management ────────────────────────────────────
 // Power operations use fixed systemctl commands over SSH, with independent sudo credentials.
 function initiateSparkPower(spark, action, inputPassword) {
-  if (registry.getSudoTarget(spark.id, spark) !== registry.getSudoTarget(spark.id)) {
-    throw new Error("SSH target changed; reopen the power dialog and verify again");
-  }
-  if (spark.isLocal) return spawnLocalPower({ action });
+  if (spark.isLocal) return localPower({ action });
   return authenticatedPowerAction(spark, action, inputPassword ?? registry.getSudoPassword(spark.id), powerExec);
 }
 
-/** Batch routes first so they never collide with /:id/* if routing changes. */
 app.get("/api/sparks/:id/sudo", (req, res) => {
   if (!registry.getSpark(req.params.id)) return res.status(404).json({ error: "Spark not found" });
   res.json({ hasPassword: Boolean(registry.getSudoPassword(req.params.id)) });
@@ -1551,12 +1547,13 @@ app.post("/api/sparks/:id/power-check", async (req, res) => {
   if (!spark) return res.status(404).json({ error: "Spark not found" });
   try {
     const target = registry.getSudoTarget(spark.id, spark);
-    const result = await checkPowerAuth(spark, req.body?.password ?? registry.getSudoPassword(spark.id), powerExec);
+    const result = spark.isLocal ? await localPowerCheck() : await checkPowerAuth(spark, req.body?.password ?? registry.getSudoPassword(spark.id), powerExec);
     if (target !== registry.getSudoTarget(spark.id)) throw new Error("Target changed");
     res.json({ ...result, target, hasPassword: Boolean(registry.getSudoPassword(spark.id)) });
   } catch { res.status(503).json({ error: "Could not check shutdown authentication; verify the SSH connection" }); }
 });
 
+/** Batch routes first so they never collide with /:id/* if routing changes. */
 for (const action of ["shutdown", "reboot"]) {
   app.post(`/api/sparks/${action}-all`, async (req, res) => {
     const results = [];

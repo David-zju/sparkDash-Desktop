@@ -505,7 +505,6 @@
   "Open Hermes Agent update status and run updates on this machine via SSH": "查看 Hermes Agent 更新状态，并通过 SSH 在此设备上执行更新",
   "{0} commit{1} behind": "落后 {0} 次提交",
   "Update available": "有可用更新",
-  "Graceful shutdown (requires /usr/local/bin/spark-shutdown on the host)": "正常关机（主机需要 /usr/local/bin/spark-shutdown）",
   "Shutdown": "关机",
   "Wake-on-LAN (set MAC address in Edit Spark)": "网络唤醒（在“编辑 Spark”中设置 MAC 地址）",
   "Wake": "唤醒",
@@ -604,7 +603,6 @@
   "Update now": "立即更新",
   "Port must be an integer 1–65535": "端口必须为 1–65535 之间的整数",
   "Select at least one context size that fits this model": "请至少选择一个符合模型容量的上下文档位",
-  "Shutdown initiated": "已发起关机",
   "Wake packet sent": "唤醒数据包已发送",
   "OFF TAILNET": "已离开 Tailnet",
   "unknown": "未知",
@@ -805,5 +803,13 @@
   "Sudo authentication ready": "sudo 认证已就绪",
   "systemctl is not available on this device": "此设备没有可用的 systemctl 命令",
   "Sudo authentication failed or the account is not authorized": "sudo 认证失败，或当前账户没有 sudo 权限",
-  "Power command result is unconfirmed; check sudo permissions and device state before retrying": "电源命令结果未确认，请检查 sudo 权限和设备状态后再决定是否重试"
+  "Power command result is unconfirmed; check sudo permissions and device state before retrying": "电源命令结果未确认，请检查 sudo 权限和设备状态后再决定是否重试",
+  "Invalid device selection": "设备选择无效",
+  "Offline — skipped": "离线，已跳过",
+  "Local power command failed": "本机电源命令执行失败",
+  "Could not execute the local power command": "无法执行本机电源命令",
+  "Power command was rejected; check sudo permissions and shutdown inhibitors on the device": "电源命令被拒绝；请检查设备上的 sudo 权限和阻止关机的条件",
+  "Passwordless sudo for systemctl poweroff/reboot is required on this host": "本机需要为 systemctl poweroff/reboot 配置免密码 sudo",
+  "Reboot all online Sparks": "重启所有在线 Spark",
+  "Reboot using the system power command": "使用系统电源命令重启"
 }

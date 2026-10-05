@@ -472,6 +472,8 @@ export interface PowerAuthStatus {
   target?: string;
   status: "ready" | "password_required" | "command_missing";
   hasPassword: boolean;
+  /** False for the dashboard's own host, which only supports passwordless sudo. */
+  passwordSupported?: boolean;
   error?: string;
 }
 export function checkPowerAuth(id: string, password?: string): Promise<PowerAuthStatus> {

@@ -315,7 +315,12 @@ export async function sshExec(spark, cmd, options = {}) {
       const child = execFile(file, execArgs, { timeout: timeoutMs, env, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           const msg = options.sensitive ? "Remote authentication or command failed" : stderr?.trim() || err.message;
-          reject(new Error(`SSH to ${targetHost} failed: ${msg}`));
+          // Exit status is not sensitive and lets callers tell a remote command
+          // failure apart from a dropped transport (ssh exits 255) or timeout.
+          reject(Object.assign(new Error(`SSH to ${targetHost} failed: ${msg}`), {
+            exitCode: typeof err.code === "number" ? err.code : null,
+            timedOut: Boolean(err.killed),
+          }));
         } else {
           resolve(String(stdout).trim());
         }

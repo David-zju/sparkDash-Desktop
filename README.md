@@ -34,7 +34,7 @@ Shutdown and reboot execute fixed `sudo systemctl poweroff` / `sudo systemctl re
 
 Use each device's **Sudo authentication** entry to verify and save an independent sudo password, or forget it. Power confirmation dialogs also accept a password for one use. Saved credentials use the existing AES-GCM store with a macOS Keychain-protected key. Passwords never enter device configuration, API responses, command arguments or logs. Changed SSH host/user/port settings do not reuse a previous sudo credential.
 
-Preflight checks general sudo authentication; the target's policy still decides whether the actual power command is allowed. Policies allowing only individual commands without passwords may still require a password at preflight. Batch operations address the online devices shown in confirmation and report each result. A successful request is not proof that hardware powered off or rebooted. Interrupted connections remain unconfirmed and are not retried automatically. WoL remains a separate UDP operation.
+Preflight checks general sudo authentication; the target's policy still decides whether the actual power command is allowed. Policies allowing only individual commands without passwords may still require a password at preflight. Batch operations address the online devices shown in confirmation and report each result. A successful request is not proof that hardware powered off or rebooted. Commands refused by sudo or systemctl are reported as rejected; interrupted connections and timeouts remain unconfirmed and are not retried automatically. WoL remains a separate UDP operation.
 
 ## Install and connect
 
