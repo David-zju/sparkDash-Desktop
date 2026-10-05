@@ -5,12 +5,14 @@ import { useModalPresence } from "../hooks/useModalPresence";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { PowerOffIcon } from "./ui/icons";
 
-const CONFIRM_PHRASE = "poweroff";
-
+import { SudoAuthenticationFields, type SudoTarget } from "./SudoAuthenticationFields";
 interface ConfirmShutdownDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: (sudoPasswords: Record<string, string>, targets: Record<string, string>) => void | Promise<void>;
+  targets?: SudoTarget[];
+  manageCredentials?: boolean;
+  action?: "shutdown" | "reboot";
   title: string;
   description: string;
   confirmLabel?: string;
@@ -32,10 +34,18 @@ export function ConfirmShutdownDialog({
   onClose,
   onConfirm,
   title,
+  targets,
+  manageCredentials = false,
+  action = "shutdown",
   description,
   confirmLabel = tr("Shut down"),
 }: ConfirmShutdownDialogProps) {
   useLocale();
+  const CONFIRM_PHRASE = action === "reboot" ? "reboot" : "poweroff";
+  const [sudoPasswords, setSudoPasswords] = useState<Record<string, string>>({});
+  const [targetChecks, setTargetChecks] = useState<Record<string, string>>({});
+  const [authReady, setAuthReady] = useState(false);
+  const [error, setError] = useState("");
   const [phrase, setPhrase] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -43,19 +53,22 @@ export function ConfirmShutdownDialog({
   const titleId = useId();
   const { mounted, visible } = useModalPresence(open);
   const trapRef = useFocusTrap(mounted);
+  const targetKey = JSON.stringify(targets?.map(target => target.id));
 
   useEscape(open && !submitting, onClose);
 
   useEffect(() => {
-    if (!open) {
-      setPhrase("");
-      setAcknowledged(false);
-      setSubmitting(false);
-      return;
-    }
+    setPhrase("");
+    setSudoPasswords({});
+    setTargetChecks({});
+    setAuthReady(false);
+    setError("");
+    setAcknowledged(false);
+    setSubmitting(false);
+    if (!open) return;
     const t = window.setTimeout(() => inputRef.current?.focus(), 50);
     return () => window.clearTimeout(t);
-  }, [open]);
+  }, [open, action, targetKey]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -67,15 +80,17 @@ export function ConfirmShutdownDialog({
   }, [mounted]);
 
   const phraseOk = phrase.trim().toLowerCase() === CONFIRM_PHRASE;
-  const canConfirm = phraseOk && acknowledged && !submitting;
+  const canConfirm = phraseOk && acknowledged && !submitting && (targets === undefined || (targets.length > 0 && authReady));
 
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSubmitting(true);
     try {
-      await onConfirm();
+      setError("");
+      await onConfirm(sudoPasswords, targetChecks);
       onClose();
-    } catch {
+    } catch (cause) {
+      setError(cause instanceof Error ? tr(cause.message) : tr("Shutdown failed"));
       setSubmitting(false);
     }
   };
@@ -97,16 +112,19 @@ export function ConfirmShutdownDialog({
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        <div className="modal-sheet__header flex items-center gap-2 text-danger" id={titleId}>
-          <PowerOffIcon className="h-4 w-4 shrink-0" />
-          <span>{tr("Danger zone — ")}{title}</span>
+        <div className={`modal-sheet__header flex items-center gap-2 ${manageCredentials ? "text-text" : "text-danger"}`} id={titleId}>
+          {!manageCredentials && <PowerOffIcon className="h-4 w-4 shrink-0" />}
+          <span>{!manageCredentials && tr("Danger zone — ")}{title}</span>
         </div>
 
         <div className="modal-sheet__body space-y-3">
           <p className="text-xs leading-relaxed text-muted">{description}</p>
+          {open && targets?.length ? <SudoAuthenticationFields targets={targets} disabled={submitting} onChange={setSudoPasswords} onReady={setAuthReady} onTargetsChange={setTargetChecks} /> : null}
+          {error && <p role="alert" className="text-xs text-danger">{error}</p>}
 
+          {!manageCredentials && <>
           <div className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2.5">
-            <p className="text-[11px] font-medium text-danger">{tr("This powers off hardware. Running containers and sessions will stop.")}</p>
+            <p className="text-[11px] font-medium text-danger">{tr(action === "reboot" ? "This restarts the device. Running containers and sessions will stop." : "This powers off hardware. Running containers and sessions will stop.")}</p>
           </div>
 
           <label className="flex cursor-pointer items-start gap-2.5 text-xs text-text">
@@ -117,7 +135,7 @@ export function ConfirmShutdownDialog({
               onChange={(e) => setAcknowledged(e.target.checked)}
               className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[var(--color-danger)]"
             />
-            <span>{tr("I understand this cannot be undone from the dashboard.")}</span>
+            <span>{tr(action === "reboot" ? "I understand this will interrupt running work." : "I understand this cannot be undone from the dashboard.")}</span>
           </label>
 
           <div>
@@ -140,6 +158,7 @@ export function ConfirmShutdownDialog({
               placeholder={CONFIRM_PHRASE}
             />
           </div>
+          </>}
         </div>
 
         <div className="modal-sheet__footer">
@@ -149,15 +168,15 @@ export function ConfirmShutdownDialog({
               onClick={onClose}
               disabled={submitting}
               className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
-            >{tr("Cancel")}</button>
-            <button
+            >{tr(manageCredentials ? "Close" : "Cancel")}</button>
+            {!manageCredentials && <button
               type="button"
               onClick={() => void handleConfirm()}
               disabled={!canConfirm}
               className="rounded-md border border-danger/50 bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {submitting ? tr("Shutting down…") : confirmLabel}
-            </button>
+              {submitting ? tr("Sending request…") : confirmLabel}
+            </button>}
           </div>
         </div>
       </div>

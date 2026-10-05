@@ -293,7 +293,7 @@ export function sshCommandSpec(spark, opts = {}) {
  *
  * @param {Object} spark - Spark config object
  * @param {string} cmd - Command to execute (passed as a single remote argv via bash -c)
- * @param {{ timeoutMs?: number, multiplex?: boolean, onStdout?: (chunk: string) => void }} [options]
+ * @param {{ timeoutMs?: number, multiplex?: boolean, onStdout?: (chunk: string) => void, input?: string, sensitive?: boolean }} [options]
  * @returns {Promise<string>} - Trimmed stdout
  */
 export async function sshExec(spark, cmd, options = {}) {
@@ -310,16 +310,18 @@ export async function sshExec(spark, cmd, options = {}) {
     multiplex: options.multiplex,
   });
 
-  const execute = (execArgs) =>
+  const execute = (execArgs, input) =>
     new Promise((resolve, reject) => {
       const child = execFile(file, execArgs, { timeout: timeoutMs, env, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
-          const msg = stderr?.trim() || err.message;
+          const msg = options.sensitive ? "Remote authentication or command failed" : stderr?.trim() || err.message;
           reject(new Error(`SSH to ${targetHost} failed: ${msg}`));
         } else {
           resolve(String(stdout).trim());
         }
       });
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(input);
       if (options.onStdout) child.stdout.on("data", (chunk) => options.onStdout(String(chunk)));
       _sshChildren.add(child);
       child.once("close", () => _sshChildren.delete(child));
@@ -337,7 +339,7 @@ export async function sshExec(spark, cmd, options = {}) {
     if (_closing) throw new Error("SSH connections are closing");
   }
   try {
-    return await execute(args);
+    return await execute(args, options.input);
   } catch (err) {
     // The master can die after readiness but before this exec. Never trust
     // cached state after a transport failure; the next caller must re-probe.

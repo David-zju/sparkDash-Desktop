@@ -6,14 +6,15 @@
  *   - memory (Maps) for SSH collectors / LLM probes
  *   - config/sparks-secrets.json (AES-256-GCM ciphertext, volume-mounted)
  *
- * File shape (v2):
+ * File shape (v3):
  *   {
- *     version: 2,
+ *     version: 3,
  *     secrets: { [sparkId]: "<encrypted ssh password>" },
  *     llmApiKeys: { [sparkId]: "<encrypted JSON { \"8000\": \"sk-…\" }>" }
  *   }
  *
- * v1 files (secrets only) still load; rewritten as v2 on next save.
+ * v1/v2 files still load; rewritten as v3 on next save.
+ * v3 adds encrypted sudoPasswords keyed by device ID, bound to the SSH target.
  *
  * Encryption key:
  *   - SPARKDASH_SECRETS_KEY env (passphrase or 64-char hex), or
@@ -130,9 +131,10 @@ export function loadSecrets() {
   const passwords = new Map();
   /** @type {Map<string, Record<string, string>>} */
   const llmApiKeys = new Map();
+  const sudoPasswords = new Map();
 
   if (!fs.existsSync(SPARKS_SECRETS_PATH)) {
-    return { passwords, llmApiKeys };
+    return { passwords, llmApiKeys, sudoPasswords };
   }
 
   try {
@@ -141,14 +143,19 @@ export function loadSecrets() {
     if (process.env.SPARKDASH_DESKTOP === "1") {
       const validMap = (value) => value && typeof value === 'object' && !Array.isArray(value) &&
         Object.entries(value).every(([id, blob]) => id && typeof blob === 'string' && blob.length > 0);
-      if (!data || ![1, 2].includes(data.version) || !validMap(data.secrets) ||
-        (data.version === 2 && !validMap(data.llmApiKeys))) {
+      if (!data || ![1, 2, 3].includes(data.version) || !validMap(data.secrets) ||
+        (data.version >= 2 && !validMap(data.llmApiKeys)) ||
+        (data.version === 3 && !validMap(data.sudoPasswords))) {
         throw new Error('Saved credential file has an unsupported or invalid format. Original file preserved');
       }
     }
     // An empty store has nothing to decrypt and does not need Keychain access.
-    const hasCiphertext = Object.keys(data?.secrets || {}).length > 0 || Object.keys(data?.llmApiKeys || {}).length > 0;
+    const hasCiphertext = Object.keys(data?.secrets || {}).length > 0 || Object.keys(data?.llmApiKeys || {}).length > 0 || Object.keys(data?.sudoPasswords || {}).length > 0;
     const key = hasCiphertext ? resolveKey() : null;
+    for (const [id, blob] of Object.entries(data.sudoPasswords || {})) {
+      try { sudoPasswords.set(id, decrypt(blob, key)); }
+      catch { throw new Error("Cannot decrypt saved sudo credentials; original file preserved"); }
+    }
     const entries = data?.secrets || {};
     if (typeof entries === "object" && entries !== null) {
       let failed = 0;
@@ -218,7 +225,7 @@ export function loadSecrets() {
     console.error(`[secretsStore] Failed to load secrets: ${err.message}`);
   }
 
-  return { passwords, llmApiKeys };
+  return { passwords, llmApiKeys, sudoPasswords };
 }
 
 /**
@@ -228,7 +235,7 @@ export function loadSecrets() {
  * @param {Map<string, string>} passwords
  * @param {Map<string, Record<string, string>>} [llmApiKeys]
  */
-export function saveSecrets(passwords, llmApiKeys = new Map()) {
+export function saveSecrets(passwords, llmApiKeys = new Map(), sudoPasswords = new Map()) {
   const hasPasswords = passwords && passwords.size > 0;
   let hasKeys = false;
   if (llmApiKeys) {
@@ -240,7 +247,7 @@ export function saveSecrets(passwords, llmApiKeys = new Map()) {
     }
   }
 
-  if (!hasPasswords && !hasKeys) {
+  if (!hasPasswords && !hasKeys && !sudoPasswords.size) {
     if (fs.existsSync(SPARKS_SECRETS_PATH)) {
       try {
         fs.accessSync(SPARKS_SECRETS_PATH, fs.constants.W_OK);
@@ -278,7 +285,7 @@ export function saveSecrets(passwords, llmApiKeys = new Map()) {
   }
 
   const payload =
-    JSON.stringify({ version: 2, secrets, llmApiKeys: llmOut }, null, 2) + "\n";
+    JSON.stringify({ version: 3, secrets, llmApiKeys: llmOut, sudoPasswords: Object.fromEntries([...sudoPasswords].map(([id, pw]) => [id, encrypt(pw, key)])) }, null, 2) + "\n";
   atomicWrite(SPARKS_SECRETS_PATH, payload, 0o600);
   const keyCount = Object.keys(llmOut).length;
   console.log(

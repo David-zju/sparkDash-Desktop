@@ -420,9 +420,9 @@ export interface BatchPowerResult {
   }[];
 }
 
-/** Gracefully shut down a single Spark (host script: spark-shutdown). */
-export function shutdownSpark(id: string): Promise<PowerResult> {
-  return apiFetch(`/api/sparks/${id}/shutdown`, { method: "POST" });
+/** Request shutdown through the system power command over SSH. */
+export function shutdownSpark(id: string, sudoPasswords: Record<string, string> = {}, targets?: Record<string, string>): Promise<PowerResult> {
+  return apiFetch(`/api/sparks/${id}/shutdown`, { method: "POST", body: JSON.stringify({ sudoPasswords, targets }) });
 }
 
 /** Send a Wake-on-LAN magic packet to a single Spark. */
@@ -431,8 +431,8 @@ export function wakeSpark(id: string): Promise<PowerResult> {
 }
 
 /** Shut down Sparks that are currently online. */
-export function shutdownAllSparks(): Promise<BatchPowerResult> {
-  return apiFetch("/api/sparks/shutdown-all", { method: "POST" });
+export function shutdownAllSparks(sudoPasswords: Record<string, string> = {}, ids?: string[], targets?: Record<string, string>): Promise<BatchPowerResult> {
+  return apiFetch("/api/sparks/shutdown-all", { method: "POST", body: JSON.stringify({ sudoPasswords, ids, targets }) });
 }
 
 /** Send WoL to all registered Sparks that have a MAC configured. */
@@ -466,4 +466,31 @@ export function startFabricBenchmark(request: { headId: string; a: string; b: st
 }
 export function cancelFabricBenchmark(id: string): Promise<{ job: FabricBenchmarkJob }> {
   return apiFetch(`/api/clusters/benchmark/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export interface PowerAuthStatus {
+  target?: string;
+  status: "ready" | "password_required" | "command_missing";
+  hasPassword: boolean;
+  error?: string;
+}
+export function checkPowerAuth(id: string, password?: string): Promise<PowerAuthStatus> {
+  return apiFetch(`/api/sparks/${id}/power-check`, { method: "POST", body: JSON.stringify({ password }) });
+}
+export function saveSudoPassword(id: string, password: string): Promise<{ hasPassword: boolean }> {
+  return apiFetch(`/api/sparks/${id}/sudo`, { method: "PUT", body: JSON.stringify({ password }) });
+}
+export function forgetSudoPassword(id: string): Promise<{ hasPassword: boolean }> {
+  return apiFetch(`/api/sparks/${id}/sudo`, { method: "DELETE" });
+}
+
+export function getSudoPasswordStatus(id: string): Promise<{ hasPassword: boolean }> {
+  return apiFetch(`/api/sparks/${id}/sudo`);
+}
+
+export function rebootSpark(id: string, sudoPasswords: Record<string, string> = {}, targets?: Record<string, string>): Promise<PowerResult> {
+  return apiFetch(`/api/sparks/${id}/reboot`, { method: "POST", body: JSON.stringify({ sudoPasswords, targets }) });
+}
+export function rebootAllSparks(sudoPasswords: Record<string, string>, ids: string[], targets?: Record<string, string>): Promise<BatchPowerResult> {
+  return apiFetch("/api/sparks/reboot-all", { method: "POST", body: JSON.stringify({ sudoPasswords, ids, targets }) });
 }

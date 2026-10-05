@@ -20,7 +20,8 @@ import { authorizeUpgrade, configuredToken, createAuthMiddleware, requireRemoteA
 import { inspectHealth } from "./health.js";
 import { getSettings, updateSettings, loadSettings } from "./settings.js";
 import { broadcastForLanIp, effectiveMac, normalizeMac, sendWol } from "./wol.js";
-import { remoteShutdownCommand, spawnLocalShutdown } from "./shutdown.js";
+import { spawnLocalPower } from "./shutdown.js";
+import { checkPowerAuth, authenticatedPowerAction, verifySudoPassword } from "./sudoAuth.js";
 import {
   decodeBenchManager,
   DECODE_BENCH_DEFAULTS,
@@ -66,7 +67,7 @@ const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), 
 // Default to loopback. Direct non-loopback binds fail closed because this release
 // does not authenticate LAN clients. Use an SSH tunnel, authenticated reverse
 // proxy, or Tailscale Serve (docs/REMOTE-ACCESS.md).
-export function createBackend({ monitorFactory = (spark, options) => new SparkMonitor(spark, options), prepareCredentials = async () => {}, fabricDiscovery = discoverFabric, fabricBenchmark = new FabricBenchmark() } = {}) {
+export function createBackend({ monitorFactory = (spark, options) => new SparkMonitor(spark, options), prepareCredentials = async () => {}, fabricDiscovery = discoverFabric, fabricBenchmark = new FabricBenchmark(), powerExec = sshExec } = {}) {
 const desktop = process.env.SPARKDASH_DESKTOP === "1";
 const BIND_HOST = desktop ? "127.0.0.1" : process.env.BIND_HOST || "127.0.0.1";
 const PORT = desktop ? 0 : parseInt(process.env.PORT || "5555", 10);
@@ -347,7 +348,8 @@ app.use(async (req, res, next) => {
       (req.method === 'PUT' && /^\/api\/sparks\/[^/]+\/password$/.test(req.path))
     );
     const writesApiKey = req.method === 'PUT' && /^\/api\/sparks\/[^/]+\/llm-ports\/[^/]+\/api-key$/.test(req.path) && Boolean(req.body?.apiKey);
-    if (writesPassword || writesApiKey) {
+    const writesSudo = req.method === "PUT" && /^\/api\/sparks\/[^/]+\/sudo$/.test(req.path) && Boolean(req.body?.password);
+    if (writesPassword || writesApiKey || writesSudo) {
       try { await prepareCredentials(); }
       catch (error) { return res.status(503).json({ error: error.message }); }
     }
@@ -1516,87 +1518,69 @@ app.delete("/api/sparks/:id/llm/showcase/:sessionId", (req, res) => {
 });
 
 // ─── Power management ────────────────────────────────────
-// Shutdown uses the host script /usr/local/bin/spark-shutdown (see server/shutdown.js
-// for the local host-namespace drop and the remote command string).
-// These routes are unauthenticated like the rest of the LAN dashboard — do not
-// expose port 5555 beyond a trusted network.
-
-/** Remote: verify script + passwordless sudo, then background shutdown so SSH
- * returns before the host dies. Failures before backgrounding surface to the UI. */
-const SHUTDOWN_REMOTE_CMD = remoteShutdownCommand();
-
-function shutdownErrorStatus(msg) {
-  if (/timed out|connection refused|unreachable|no route|ECONNREFUSED|ETIMEDOUT/i.test(msg)) {
-    return 503;
+// Power operations use fixed systemctl commands over SSH, with independent sudo credentials.
+function initiateSparkPower(spark, action, inputPassword) {
+  if (registry.getSudoTarget(spark.id, spark) !== registry.getSudoTarget(spark.id)) {
+    throw new Error("SSH target changed; reopen the power dialog and verify again");
   }
-  return 500;
-}
-
-/**
- * Only treat "host dropped the SSH session mid-shutdown" as success.
- * Connect timeouts / auth / missing script must remain real errors.
- */
-function isBenignShutdownSshError(msg) {
-  return /ECONNRESET|Connection reset|broken pipe|Connection closed by remote|closed by remote host|Connection to .* closed/i.test(
-    String(msg || "")
-  );
-}
-
-/**
- * Kick off graceful shutdown. Always aims to return quickly so the browser
- * gets a real JSON response instead of "Failed to fetch" when the SSH session
- * drops as the host powers off.
- */
-function initiateSparkShutdown(spark) {
-  if (spark.isLocal) {
-    return spawnLocalShutdown();
-  }
-
-  return sshExec(spark, SHUTDOWN_REMOTE_CMD, { timeoutMs: 8000 })
-    .then(() => "Shutdown initiated")
-    .catch((err) => {
-      const msg = err.message || String(err);
-      if (isBenignShutdownSshError(msg)) {
-        return "Shutdown initiated";
-      }
-      throw err;
-    });
+  if (spark.isLocal) return spawnLocalPower({ action });
+  return authenticatedPowerAction(spark, action, inputPassword ?? registry.getSudoPassword(spark.id), powerExec);
 }
 
 /** Batch routes first so they never collide with /:id/* if routing changes. */
-app.post("/api/sparks/shutdown-all", async (_req, res) => {
-  const results = [];
-  // Remotes first, local last — shutting down the dashboard host mid-loop would
-  // skip remaining Sparks.
-  const ordered = [
-    ...registry.sparks.filter((s) => !s.isLocal),
-    ...registry.sparks.filter((s) => s.isLocal),
-  ];
-  for (const spark of ordered) {
-    const monitor = monitors.get(spark.id);
-    if (!monitor?.online) {
-      results.push({ id: spark.id, ok: false, skipped: true, error: "Offline — skipped" });
-      continue;
-    }
-    try {
-      // Local dashboard host: acknowledge before power-off kills this process.
-      if (spark.isLocal) {
-        results.push({ id: spark.id, ok: true, message: "Shutdown initiated" });
-        setImmediate(() => {
-          void initiateSparkShutdown(spark).catch((err) => {
-            console.error(`[shutdown-all] local ${spark.id}:`, err.message);
-          });
-        });
-        continue;
-      }
-      await initiateSparkShutdown(spark);
-      results.push({ id: spark.id, ok: true });
-    } catch (err) {
-      results.push({ id: spark.id, ok: false, error: err.message || String(err) });
-    }
-  }
-  res.json({ success: true, results });
+app.get("/api/sparks/:id/sudo", (req, res) => {
+  if (!registry.getSpark(req.params.id)) return res.status(404).json({ error: "Spark not found" });
+  res.json({ hasPassword: Boolean(registry.getSudoPassword(req.params.id)) });
 });
+app.put("/api/sparks/:id/sudo", async (req, res) => {
+  const spark = registry.getSpark(req.params.id);
+  if (!spark) return res.status(404).json({ error: "Spark not found" });
+  try {
+    await verifySudoPassword(spark, req.body?.password, powerExec);
+    registry.setSudoPassword(spark.id, req.body.password, spark);
+    res.json({ hasPassword: true });
+  } catch { res.status(400).json({ error: "Could not verify and save sudo authentication" }); }
+});
+app.delete("/api/sparks/:id/sudo", (req, res) => {
+  if (!registry.getSpark(req.params.id)) return res.status(404).json({ error: "Spark not found" });
+  try { registry.setSudoPassword(req.params.id, null); res.json({ hasPassword: false }); }
+  catch { res.status(500).json({ error: "Could not clear saved sudo authentication" }); }
+});
+app.post("/api/sparks/:id/power-check", async (req, res) => {
+  const spark = registry.getSpark(req.params.id);
+  if (!spark) return res.status(404).json({ error: "Spark not found" });
+  try {
+    const target = registry.getSudoTarget(spark.id, spark);
+    const result = await checkPowerAuth(spark, req.body?.password ?? registry.getSudoPassword(spark.id), powerExec);
+    if (target !== registry.getSudoTarget(spark.id)) throw new Error("Target changed");
+    res.json({ ...result, target, hasPassword: Boolean(registry.getSudoPassword(spark.id)) });
+  } catch { res.status(503).json({ error: "Could not check shutdown authentication; verify the SSH connection" }); }
+});
+
+for (const action of ["shutdown", "reboot"]) {
+  app.post(`/api/sparks/${action}-all`, async (req, res) => {
+    const results = [];
+    const requested = req.body?.ids;
+    if (requested !== undefined && (!Array.isArray(requested) || !requested.length || requested.some(id => typeof id !== "string" || !registry.getSpark(id)))) {
+      return res.status(400).json({ error: "Invalid device selection" });
+    }
+    const ordered = [...registry.sparks.filter(s => !s.isLocal), ...registry.sparks.filter(s => s.isLocal)];
+    for (const spark of ordered) {
+      if (requested && !requested.includes(spark.id)) continue;
+      if (!monitors.get(spark.id)?.online) {
+        results.push({ id: spark.id, ok: false, skipped: true, error: "Offline — skipped" }); continue;
+      }
+      try {
+        if (req.body?.targets && req.body.targets[spark.id] !== registry.getSudoTarget(spark.id, spark)) {
+          throw new Error("SSH target changed; reopen the power dialog and verify again");
+        }
+        const message = await initiateSparkPower(spark, action, req.body?.sudoPasswords?.[spark.id]);
+        results.push({ id: spark.id, ok: true, message });
+      } catch (error) { results.push({ id: spark.id, ok: false, error: error.message }); }
+    }
+    res.json({ success: results.every(r => r.ok || r.skipped), results });
+  });
+}
 
 app.post("/api/sparks/wake-all", async (_req, res) => {
   const results = [];
@@ -1621,36 +1605,19 @@ app.post("/api/sparks/wake-all", async (_req, res) => {
   res.json({ success: true, results });
 });
 
-app.post("/api/sparks/:id/shutdown", async (req, res) => {
-  try {
+for (const action of ["shutdown", "reboot"]) {
+  app.post(`/api/sparks/:id/${action}`, async (req, res) => {
     const spark = registry.getSpark(req.params.id);
     if (!spark) return res.status(404).json({ error: "Spark not found" });
-
-    // Local: send JSON first, then power off — otherwise the process dies mid-response
-    // and the UI shows "Failed to fetch".
-    if (spark.isLocal) {
-      res.json({ success: true, message: "Shutdown initiated" });
-      setImmediate(() => {
-        void initiateSparkShutdown(spark).catch((err) => {
-          console.error(`[shutdown] local ${spark.id}:`, err.message);
-        });
-      });
-      return;
-    }
-
     try {
-      const message = await initiateSparkShutdown(spark);
-      res.json({ success: true, message, output: message });
-    } catch (err) {
-      const msg = err.message || String(err);
-      res.status(shutdownErrorStatus(msg)).json({
-        error: shutdownErrorStatus(msg) === 503 ? `Spark unreachable: ${msg}` : msg,
-      });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+      if (req.body?.targets && req.body.targets[spark.id] !== registry.getSudoTarget(spark.id, spark)) {
+        throw new Error("SSH target changed; reopen the power dialog and verify again");
+      }
+      const message = await initiateSparkPower(spark, action, req.body?.sudoPasswords?.[spark.id]);
+      res.json({ success: true, message });
+    } catch (error) { res.status(400).json({ error: error.message }); }
+  });
+}
 
 app.post("/api/sparks/:id/wake", async (req, res) => {
   try {

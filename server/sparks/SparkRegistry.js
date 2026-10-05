@@ -20,6 +20,7 @@ export class SparkRegistry {
     this._sparks = [];
     /** @type {Map<string, string>} sparkId -> password */
     this._passwords = new Map();
+    this._sudoPasswords = new Map();
     /** @type {Map<string, Record<string, string>>} sparkId -> { portStr -> apiKey } */
     this._llmApiKeys = new Map();
     this._listeners = new Set();
@@ -172,14 +173,24 @@ export class SparkRegistry {
     };
     const nextSparks = [...this._sparks];
     nextSparks[idx] = this._normalizeConfig(updated);
+    const nextPasswords = new Map(this._passwords);
+    const nextSudo = new Map(this._sudoPasswords);
+    const sudoChanged = this.getSudoTarget(id, prev) !== this.getSudoTarget(id, nextSparks[idx]) && nextSudo.delete(id);
+    const passwordChanged = hasPasswordUpdate && passwordUpdate != null;
+    if (passwordChanged) {
+      if (passwordUpdate === "") nextPasswords.delete(id);
+      else nextPasswords.set(id, String(passwordUpdate));
+    }
     this._save(nextSparks);
     try {
-      if (hasPasswordUpdate) this._storePassword(id, passwordUpdate);
+      if (passwordChanged || sudoChanged) this._saveSecrets(nextPasswords, this._llmApiKeys, nextSudo);
     } catch (err) {
       this._save(this._sparks);
       throw err;
     }
     this._sparks = nextSparks;
+    this._passwords = nextPasswords;
+    this._sudoPasswords = nextSudo;
     this._emit("update", this._withSecrets(this._sparks[idx]));
     return this._withSecrets(this._sparks[idx]);
   }
@@ -191,19 +202,22 @@ export class SparkRegistry {
     const removed = this._sparks[idx];
     const nextSparks = this._sparks.filter((s) => s.id !== id);
     const nextPasswords = new Map(this._passwords);
+    const nextSudo = new Map(this._sudoPasswords);
+    const sudoChanged = nextSudo.delete(id);
     const nextLlmApiKeys = new Map(this._llmApiKeys);
     const passwordChanged = nextPasswords.delete(id);
     const llmKeysChanged = nextLlmApiKeys.delete(id);
-    const secretsChanged = passwordChanged || llmKeysChanged;
+    const secretsChanged = passwordChanged || llmKeysChanged || sudoChanged;
     this._save(nextSparks);
     try {
-      if (secretsChanged) this._saveSecrets(nextPasswords, nextLlmApiKeys);
+      if (secretsChanged) this._saveSecrets(nextPasswords, nextLlmApiKeys, nextSudo);
     } catch (err) {
       this._save(this._sparks);
       throw err;
     }
     this._sparks = nextSparks;
     this._passwords = nextPasswords;
+    this._sudoPasswords = nextSudo;
     this._llmApiKeys = nextLlmApiKeys;
     this._emit("remove", removed);
     return this.toPublic(removed);
@@ -247,11 +261,13 @@ export class SparkRegistry {
     try {
       const loaded = loadSecrets();
       this._passwords = loaded.passwords || new Map();
+      this._sudoPasswords = loaded.sudoPasswords || new Map();
       this._llmApiKeys = loaded.llmApiKeys || new Map();
     } catch (err) {
       console.error("[SparkRegistry] secrets load failed:", err.message);
       if (process.env.SPARKDASH_DESKTOP === "1") throw err;
       this._passwords = new Map();
+      this._sudoPasswords = new Map();
       this._llmApiKeys = new Map();
     }
 
@@ -566,9 +582,31 @@ export class SparkRegistry {
     this._saveSecrets(this._passwords, this._llmApiKeys);
   }
 
-  _saveSecrets(passwords, llmApiKeys) {
+  getSudoTarget(id, spark = this.getSpark(id)) {
+    return spark ? JSON.stringify([spark.ssh?.host || spark.lanIp, spark.ssh?.user || "", spark.ssh?.port || 22, Boolean(spark.isLocal)]) : null;
+  }
+
+  getSudoPassword(id) {
     try {
-      saveSecrets(passwords, llmApiKeys);
+      const saved = JSON.parse(this._sudoPasswords.get(id));
+      return saved.target === this.getSudoTarget(id) ? saved.password : undefined;
+    } catch { return undefined; }
+  }
+
+  setSudoPassword(id, password, verifiedSpark) {
+    if (!this.getSpark(id)) throw new Error("Spark not found");
+    if (verifiedSpark && this.getSudoTarget(id, verifiedSpark) !== this.getSudoTarget(id)) {
+      throw new Error("SSH target changed during sudo verification; verify again");
+    }
+    const next = new Map(this._sudoPasswords);
+    if (password) next.set(id, JSON.stringify({ password, target: this.getSudoTarget(id) })); else next.delete(id);
+    this._saveSecrets(this._passwords, this._llmApiKeys, next);
+    this._sudoPasswords = next;
+  }
+
+  _saveSecrets(passwords, llmApiKeys, sudoPasswords = this._sudoPasswords) {
+    try {
+      saveSecrets(passwords, llmApiKeys, sudoPasswords);
     } catch (cause) {
       const err = new Error("Secrets persistence failed", { cause });
       err.status = 500;

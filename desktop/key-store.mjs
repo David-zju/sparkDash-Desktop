@@ -9,11 +9,12 @@ export function needsSecretsKey(dataDir) {
   if (fs.existsSync(savedPath)) {
     const saved = JSON.parse(fs.readFileSync(savedPath, 'utf8'));
     const isMap = (value) => value && typeof value === 'object' && !Array.isArray(value);
-    if (!saved || ![1, 2].includes(saved.version) || !isMap(saved.secrets) ||
-        (saved.version === 2 && !isMap(saved.llmApiKeys))) {
+    if (!saved || ![1, 2, 3].includes(saved.version) || !isMap(saved.secrets) ||
+        (saved.version >= 2 && !isMap(saved.llmApiKeys)) ||
+        (saved.version === 3 && !isMap(saved.sudoPasswords))) {
       throw new Error('Saved credential file has an invalid format. Original file preserved');
     }
-    if (Object.keys(saved.secrets).length || Object.keys(saved.llmApiKeys || {}).length) return true;
+    if (Object.keys(saved.secrets).length || Object.keys(saved.llmApiKeys || {}).length || Object.keys(saved.sudoPasswords || {}).length) return true;
   }
   const configPath = path.join(dataDir, 'sparks.json');
   if (!fs.existsSync(configPath)) return false;
@@ -40,8 +41,9 @@ export function loadSecretsKey(dataDir, safeStorage) {
   if (fs.existsSync(path.join(dataDir, 'sparks-secrets.json'))) {
     const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'sparks-secrets.json'), 'utf8'));
     const emptyMap = (value) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
-    if (!saved || ![1, 2].includes(saved.version) || !emptyMap(saved.secrets) ||
-        (saved.version === 2 && !emptyMap(saved.llmApiKeys))) {
+    if (!saved || ![1, 2, 3].includes(saved.version) || !emptyMap(saved.secrets) ||
+        (saved.version >= 2 && !emptyMap(saved.llmApiKeys)) ||
+        (saved.version === 3 && !emptyMap(saved.sudoPasswords))) {
       throw new Error('Encrypted credentials exist but their Keychain-protected key is missing. Restore the key from backup.');
     }
   }

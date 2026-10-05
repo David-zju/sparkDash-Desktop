@@ -2,7 +2,7 @@ import { translate as tr, useLocale } from "../../i18n";
 import { useEffect, useState } from "react";
 import type { SparkSnapshot } from "../../api/types";
 import { isWorkerSpark, resolveSparkRole } from "../../api/sparkRole";
-import { shutdownAllSparks, updateAllHermes, wakeAllSparks } from "../../api/client";
+import { shutdownAllSparks, rebootAllSparks, updateAllHermes, wakeAllSparks } from "../../api/client";
 import { ConfirmShutdownDialog } from "../ConfirmShutdownDialog";
 import { MetricBar } from "../ui/MetricBar";
 import { FleetEnergyCard } from "./FleetEnergyCard";
@@ -432,6 +432,8 @@ export function OverviewPage({
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchMsg, setBatchMsg] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
   const [shutdownOpen, setShutdownOpen] = useState(false);
+  const [powerAction, setPowerAction] = useState<"shutdown" | "reboot">("shutdown");
+  const [powerTargets, setPowerTargets] = useState<Array<{ id: string; name: string }>>([]);
   /** Spark ids we started a batch Hermes update on; drives the live progress bar. */
   const [batchRun, setBatchRun] = useState<string[] | null>(null);
 
@@ -505,17 +507,17 @@ export function OverviewPage({
     }
   }
 
-  async function handleShutdownAll() {
-    if (onlineShutdownCount === 0) return;
+  async function handleShutdownAll(sudoPasswords: Record<string, string>, targets: Record<string, string>) {
+    if (powerTargets.length === 0) return;
     setBatchLoading(true);
     setBatchMsg(null);
     try {
-      const res = await shutdownAllSparks();
+      const res = await (powerAction === "reboot" ? rebootAllSparks : shutdownAllSparks)(sudoPasswords, powerTargets.map(s => s.id), targets);
       const ok = res.results.filter((r) => r.ok).length;
       const fail = res.results.filter((r) => !r.ok && !r.skipped).length;
       const skipped = res.results.filter((r) => r.skipped).length;
-      const parts = [tr("{0} shut down", [ok])];
-      if (fail) parts.push(tr("{0} failed", [fail]));
+      const parts = [tr("{0} power requests accepted", [ok])];
+      if (fail) parts.push(...res.results.filter(r => !r.ok && !r.skipped).map(r => `${sparks.find(s => s.id === r.id)?.name || r.id}: ${tr(r.error || "Shutdown failed")}`));
       if (skipped) parts.push(tr("{0} skipped", [skipped]));
       setBatchMsg({
         text: parts.join(", "),
@@ -649,12 +651,13 @@ export function OverviewPage({
                 <PowerOnIcon className="h-3 w-3" />{tr("Wake All")}</button>
               <button
                 type="button"
-                onClick={() => setShutdownOpen(true)}
+                onClick={() => { setPowerTargets(sparks.filter(s => s.online).map(s => ({ id: s.id, name: s.name }))); setPowerAction("shutdown"); setShutdownOpen(true); }}
                 disabled={batchLoading || onlineShutdownCount === 0}
                 title={tr("Shut down all online Sparks")}
                 className="flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:bg-danger/20 hover:text-danger disabled:opacity-50"
               >
                 <PowerOffIcon className="h-3 w-3" />{tr("Shutdown All")}</button>
+              <button type="button" disabled={batchLoading || onlineShutdownCount === 0} onClick={() => { setPowerTargets(sparks.filter(s => s.online).map(s => ({ id: s.id, name: s.name }))); setPowerAction("reboot"); setShutdownOpen(true); }} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[11px] text-muted hover:text-text disabled:opacity-50"><RotateIcon className="h-3 w-3" />{tr("Reboot All")}</button>
             </div>
           )}
           <span className="online-chip">
@@ -692,9 +695,11 @@ export function OverviewPage({
         open={shutdownOpen}
         onClose={() => setShutdownOpen(false)}
         onConfirm={handleShutdownAll}
-        title={tr("Shutdown All")}
-        description={tr("Gracefully shut down all {0} online Spark{1}? Offline nodes will be skipped.", [onlineShutdownCount, onlineShutdownCount === 1 ? "" : "s"])}
-        confirmLabel={tr("Shut down all")}
+        targets={powerTargets}
+        action={powerAction}
+        title={tr(powerAction === "reboot" ? "Reboot All" : "Shutdown All")}
+        description={tr(powerAction === "reboot" ? "Restart all {0} online Spark{1}? Offline nodes will be skipped." : "Gracefully shut down all {0} online Spark{1}? Offline nodes will be skipped.", [powerTargets.length, powerTargets.length === 1 ? "" : "s"])}
+        confirmLabel={tr(powerAction === "reboot" ? "Reboot All" : "Shut down all")}
       />
       {showLlmTokenTotals ? <FleetTokenTotals /> : null}
       {benchmarkGroup && <ClusterBenchmarkDialog headId={benchmarkGroup.head.id} members={benchmarkGroup.members} onClose={() => setBenchmarkHeadId(null)} />}

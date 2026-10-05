@@ -24,9 +24,17 @@ A desktop application for monitoring NVIDIA DGX Spark and remote Linux NVIDIA GP
 | Optional services | ComfyUI queues and progress, Hermes status and explicit updates, Tailscale status |
 | Desktop integration | Native menus, four themes, live language switching, local SSH alias import, key/password authentication, service tunnels and sleep/wake cleanup |
 | Cluster overview | Head/Worker grouping and direct-link 200G network discovery for 2–12 saved Sparks, plus optional pairwise TCP and RDMA Write bandwidth tests |
-| Device operations | Explicit shutdown and Wake-on-LAN actions, subject to remote helper and network support |
+| Device operations | Single-device and batch shutdown/reboot through system commands, separate optional encrypted sudo credentials, and Wake-on-LAN |
 
 The monitoring UI, collectors, service integrations and inference benchmarks come from upstream sparkDash. This version adds desktop menus, local SSH configuration import, English / Chinese switching, cluster grouping, and bandwidth / RDMA tests. See the [feature matrix](docs/upstream-feature-matrix.md) and [acknowledgements](ACKNOWLEDGEMENTS.md).
+
+## Power operations and sudo credentials
+
+Shutdown and reboot execute fixed `sudo systemctl poweroff` / `sudo systemctl reboot` commands over SSH. No `spark-shutdown` helper is required. The target must provide systemd and sudo authorization for the requested command; the app does not install tools, change sudoers, or override shutdown inhibitors.
+
+Use each device's **Sudo authentication** entry to verify and save an independent sudo password, or forget it. Power confirmation dialogs also accept a password for one use. Saved credentials use the existing AES-GCM store with a macOS Keychain-protected key. Passwords never enter device configuration, API responses, command arguments or logs. Changed SSH host/user/port settings do not reuse a previous sudo credential.
+
+Preflight checks general sudo authentication; the target's policy still decides whether the actual power command is allowed. Policies allowing only individual commands without passwords may still require a password at preflight. Batch operations address the online devices shown in confirmation and report each result. A successful request is not proof that hardware powered off or rebooted. Interrupted connections remain unconfirmed and are not retried automatically. WoL remains a separate UDP operation.
 
 ## Install and connect
 

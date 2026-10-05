@@ -48,6 +48,7 @@ test('credential access is deferred; denial preserves data and monitoring, then 
   assert.deepEqual((await request('/api/sparks')).body, registryBefore);
   for (const [url, method, body] of [
     ['/api/sparks/fixture/password', 'PUT', { password: 'fixture-password' }],
+    ['/api/sparks/fixture/sudo', 'PUT', { password: 'fixture-sudo' }],
     ['/api/sparks/fixture', 'PATCH', { name: 'Must not change', ssh: { password: 'fixture-password' } }],
     ['/api/sparks/fixture/llm-ports/8888/api-key', 'PUT', { apiKey: 'fixture-api-key' }],
     ['/api/sparks/fixture/test', 'POST', { password: 'fixture-password' }],
@@ -59,7 +60,7 @@ test('credential access is deferred; denial preserves data and monitoring, then 
   const current = (await request('/api/sparks')).body.sparks;
   assert.equal(current.length, 1);
   assert.equal(current[0].name, 'Fixture');
-  assert.equal(accesses, 5);
+  assert.equal(accesses, 6);
   allow = true;
   assert.equal((await request('/api/sparks/fixture/password', 'PUT', { password: 'fixture-password' })).status, 200);
   assert.equal((await request('/api/sparks/fixture/llm-ports/8888/api-key', 'PUT', { apiKey: 'fixture-api-key' })).status, 200);
