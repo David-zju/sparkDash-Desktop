@@ -91,7 +91,7 @@ docs/         架构、功能矩阵、验收与研究记录
 
 ## 开发与构建
 
-目前的桌面运行和打包流程使用 macOS，需要先安装 Node.js **24.19+** 和 **pnpm 11.25.0**，然后在仓库根目录执行：
+目前的桌面运行和打包流程使用 macOS，需要先安装 Node.js **24+**（版本见 `.node-version`）和 **pnpm 11.25.0**（由 Corepack 按 `packageManager` 自动准备），然后在仓库根目录执行：
 
 ```sh
 pnpm install --frozen-lockfile

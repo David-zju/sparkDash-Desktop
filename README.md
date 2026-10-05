@@ -91,7 +91,7 @@ docs/         Architecture, feature matrix, verification and research
 
 ## Development
 
-The current desktop development and packaging workflow uses macOS, Node.js **24.19+**, and **pnpm 11.25.0**. Commands run from the repository root:
+The current desktop development and packaging workflow uses macOS, Node.js **24+** (pinned in `.node-version`), and **pnpm 11.25.0** (provisioned by Corepack via `packageManager`). Commands run from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
