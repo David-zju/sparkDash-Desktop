@@ -62,7 +62,7 @@ export function SudoAuthenticationFields({ targets, disabled, onChange, onReady,
     }
   }
   return <div className="space-y-3" aria-label={tr("Sudo authentication")}>
-    <p className="text-xs text-muted">{tr("Sudo credentials are separate from SSH. Passwords are used once unless you choose to save them encrypted.")}</p>
+    <p className="text-xs text-muted">{tr("sudo credentials are only used to shut down or reboot this device from sparkDash, and are separate from the SSH login. A saved password is stored encrypted on this computer and can be forgotten at any time.")}</p>
     {targets.map(target => {
       const entry = entries[target.id];
       const busy = disabled || !entry || entry.busy;

@@ -173,7 +173,7 @@ export function SparkActions({ spark, onEdit, className }: SparkActionsProps) {
       </div>
       <ConfirmShutdownDialog open={sudoOpen} onClose={() => setSudoOpen(false)} onConfirm={() => {}}
         manageCredentials targets={[{ id: spark.id, name: spark.name }]} title={tr("Sudo authentication")}
-        description={tr("Manage sudo credentials for {0}. This does not shut down the device.", [spark.name])} />
+        description={tr("Save or check the sudo password for {0}, used for shutdown and reboot. Opening this dialog does not power off the device.", [spark.name])} />
       <ConfirmShutdownDialog
         open={shutdownOpen}
         onClose={() => setShutdownOpen(false)}
