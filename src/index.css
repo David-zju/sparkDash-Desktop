@@ -358,12 +358,35 @@ html[data-desktop="darwin"] .dashboard-shell {
   box-shadow: none;
 }
 
-html[data-desktop="darwin"] .overview-page {
+/* Use the grid's available width, including inside a padded cluster. */
+.overview-page {
+  display: grid;
+  min-width: 0;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
 }
 
-html[data-desktop="darwin"] .overview-page > p:only-child {
+.overview-page > p:only-child {
   grid-column: 1 / -1;
+}
+
+.overview-cluster {
+  container: overview-cluster / inline-size;
+  min-width: 0;
+}
+
+.overview-cluster-heading,
+.overview-cluster-actions {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@container overview-cluster (width < 36rem) {
+  .overview-cluster-header { flex-direction: column; align-items: stretch; }
+  .overview-cluster-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  }
 }
 
 html[data-desktop="darwin"] :is(.overview-card, .spark-page, .panel) {
@@ -760,7 +783,7 @@ input[type="checkbox"] {
 }
 
 /* Overview: time-based utilization, capacity, and sensor readings. */
-.overview-metric-card { min-width: 0; }
+.overview-metric-card { min-width: 0; container: overview-card / inline-size; }
 .overview-view-switch { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-surface-elevated); }
 .overview-view-switch button { padding: 7px 10px; border-radius: 6px; font-size: 12px; color: var(--color-muted); transition: background .15s, color .15s; }
 .overview-view-switch button:hover { color: var(--color-text); background: var(--color-surface-hover); }
@@ -808,7 +831,31 @@ input[type="checkbox"] {
 .overview-readout { display: flex; flex-direction: column; min-width: 0; gap: 4px; }
 .overview-readout-value { font-size: 19px; font-weight: 500; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .overview-capacity-fill { transition: none; } }
-@media (max-width: 380px) { .overview-readout-value { font-size: 16px; } }
+/* A card can be narrow in a wide window (especially inside a cluster).
+   Reflow its contents without reducing the metric font sizes. */
+@container overview-card (width < 18rem) {
+  .overview-readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-readouts > :last-child { grid-column: 1 / -1; }
+  .overview-compact-usage .overview-usage-summary {
+    grid-template-columns: 32px minmax(0, 1fr) 64px;
+    row-gap: 6px;
+  }
+  .overview-compact-usage .overview-usage-track { grid-column: 1 / -1; grid-row: 2; }
+  .overview-compact-temperature { grid-column: 3; grid-row: 1; }
+}
+
+@container overview-card (width < 15rem) {
+  .overview-sectioned-usage,
+  .overview-secondary-stats { grid-template-columns: minmax(0, 1fr); }
+  .overview-sectioned-usage { gap: 16px; }
+  .overview-card-header { flex-wrap: wrap; }
+  .overview-trend-caption,
+  .overview-compact-heading { flex-wrap: wrap; gap: 4px 8px; }
+}
+
+@container overview-card (width < 12rem) {
+  .overview-readouts { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ─── Pulse / glow accents ─────────────────────────────── */
 .dot-glow-success {

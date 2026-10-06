@@ -274,7 +274,7 @@ function SparkCard({
       }}
     >
       {/* Card header */}
-      <div className="flex items-center gap-2.5">
+      <div className="overview-card-header flex items-center gap-2.5">
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-success dot-glow-success" : "bg-danger"}`}
         />
@@ -416,7 +416,7 @@ function SparkCard({
           </section>
 
           {/* Secondary stats */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3.5">
+          <div className="overview-secondary-stats grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3.5">
             {(() => {
               // Find the root disk by label "/" (the collector maps the host
               // root mount to that label). Fall back to the GB10 partition name
@@ -864,26 +864,26 @@ export function OverviewPage({
         const visibleMembers = group.members.filter((s) => visibleSparks.some((v) => v.id === s.id));
         if (!visibleMembers.length) return null;
         const online = group.members.filter((s) => s.online).length;
-        return <section key={group.head.id} aria-label={group.name} className="rounded-2xl border border-accent/30 bg-accent/5 p-4 sm:p-5">
-          <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
+        return <section key={group.head.id} aria-label={group.name} className="overview-cluster rounded-2xl border border-accent/30 bg-accent/5 p-4 sm:p-5">
+          <header className="overview-cluster-header mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="overview-cluster-heading">
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">DGX CLUSTER</p>
               <h2 className="text-lg font-semibold text-text-strong">{group.name}</h2>
               <p className="mt-1 text-xs text-muted">Head · {group.head.name} <span className="mx-2">/</span> {tr("{0} devices", [group.members.length])} · {online}/{group.members.length}{tr(" online")}{visibleMembers.length < group.members.length ? ` · ${tr("{0} hidden by filters", [group.members.length - visibleMembers.length])}` : ""}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="overview-cluster-actions flex flex-wrap gap-2">
               <button className="rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs text-text hover:bg-surface-hover" onClick={() => setBenchmarkHeadId(group.head.id)}>{tr("Bandwidth / RDMA test")}</button>
             <button className="rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs text-text hover:bg-surface-hover" onClick={() => setClusterSetup({ headId: group.head.id })}>{tr("Network / Edit cluster")}</button>
             </div>
           </header>
-          <div className="overview-page grid sm:grid-cols-2 xl:grid-cols-3" style={{ gap: "var(--density-page-gap)" }}>
+          <div className="overview-page" style={{ gap: "var(--density-page-gap)" }}>
             {visibleMembers.map((spark) => <SparkCard key={spark.id} spark={spark} headSparkName={group.head.name} temperatureUnit={temperatureUnit} now={now} pollIntervalMs={pollIntervalMs} telemetryLive={telemetryLive} cardStyle={cardStyle} onSelect={onSelectSpark} />)}
           </div>
         </section>;
       })}
-      <div className="overview-page grid sm:grid-cols-2 lg:grid-cols-3" style={{ gap: "var(--density-page-gap)" }}>
+      <div className="overview-page" style={{ gap: "var(--density-page-gap)" }}>
         {visibleSparks.length === 0 && (
-          <p className="panel p-6 text-sm text-muted sm:col-span-2 lg:col-span-3">{tr("No units match the current search and status filters.")}</p>
+          <p className="panel p-6 text-sm text-muted">{tr("No units match the current search and status filters.")}</p>
         )}
         {visibleSparks.filter((spark) => !groupedIds.has(spark.id)).map((spark) => (
           <SparkCard

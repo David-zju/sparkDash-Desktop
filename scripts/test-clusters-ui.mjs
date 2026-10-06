@@ -8,7 +8,8 @@ import { backendEnvironment } from '../desktop/runtime-env.mjs';
 // Isolated fixture backend: real HTTP, persistence and WebSocket paths; no remote commands.
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sparkdash-cluster-ui-'));
 const token = 'c'.repeat(64);
-const previewThree = process.argv.includes('--three-node-preview');
+const responsive = process.argv.includes('--responsive');
+const previewThree = responsive || process.argv.includes('--three-node-preview');
 Object.assign(process.env, backendEnvironment({ dataDir, token }));
 const nodes = [1, 2, 3, 4].map((n) => ({ id: `dgx-${n}`, name: `DGX ${n}`, kind: 'spark', role: 'standalone', ssh: { host: `fixture-${n}` } }));
 if (previewThree) {
@@ -61,7 +62,65 @@ try {
   });
   page.on('pageerror', (err) => errors.push(err.message));
   await page.goto(origin);
-  if (previewThree) {
+  if (responsive) {
+    const group = page.getByRole('region', { name: '三机集群 · 示例数据', exact: true });
+    await group.waitFor();
+    fs.mkdirSync('.desktop-test', { recursive: true });
+    const layoutFailures = [];
+    // Keep the window wide: the cluster must respond to its own available space.
+    for (const desktop of [true, false]) {
+      await page.evaluate((desktop) => {
+        if (desktop) document.documentElement.dataset.desktop = 'darwin';
+        else delete document.documentElement.dataset.desktop;
+      }, desktop);
+      for (const [width, columns] of [[1100, 3], [760, 2], [360, 1]]) {
+        await group.evaluate((el, width) => { el.style.width = `${width}px`; }, width);
+        const rects = await group.locator('.overview-card').evaluateAll((els) => els.map((el) => {
+          const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width };
+        }));
+        if (rects.filter((r) => Math.abs(r.y - rects[0].y) < 1).length !== columns) {
+          layoutFailures.push(`${desktop ? 'desktop' : 'web'} cluster at ${width}px should use ${columns} columns`);
+        }
+      }
+    }
+    await group.evaluate((el) => { el.style.removeProperty('width'); });
+    await page.evaluate(() => { document.documentElement.dataset.desktop = 'darwin'; });
+    for (const [style, label] of [['sections', '分区卡片'], ['compact', '紧凑监控行'], ['trends', '实时趋势']]) {
+      await page.setViewportSize({ width: 1400, height: 1050 });
+      await page.getByRole('button', { name: label, exact: true }).click();
+      const card = group.locator('.overview-card').first();
+      const value = card.locator(style === 'trends' ? '.overview-trend-value' : '.overview-usage-value').first();
+      const wideFont = await value.evaluate((el) => getComputedStyle(el).fontSize);
+      if (style === 'sections') {
+        const ys = await card.locator('.overview-sectioned-usage .overview-usage-summary').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().y));
+        assert.equal(ys[1], ys[0], 'Wide cards retain side-by-side compute sections');
+      }
+      for (const viewport of [1400, 320]) {
+        await page.setViewportSize({ width: viewport, height: 1050 });
+        await group.evaluate((el, viewport) => { el.style.width = viewport === 1400 ? '320px' : ''; }, viewport);
+        const overflow = await group.locator('.overview-card').evaluateAll((cards) => cards.flatMap((el) => Array.from(el.querySelectorAll('*'))
+          .filter((child) => child instanceof HTMLElement && child.clientWidth > 0 && child.scrollWidth > child.clientWidth + 1)
+          .map((child) => child.className)));
+        if (overflow.length) layoutFailures.push(`${style} at viewport ${viewport}: overflowing content: ${overflow.join(', ')}`);
+        assert.equal(await value.evaluate((el) => getComputedStyle(el).fontSize), wideFont, 'Reflow preserves metric font size');
+        if (style === 'sections') {
+          const ys = await card.locator('.overview-sectioned-usage .overview-usage-summary').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().y));
+          if (ys[1] <= ys[0]) layoutFailures.push(`Narrow cluster cards must stack GPU and CPU sections at viewport ${viewport}`);
+        }
+        if (style === 'compact') {
+          const sizes = await card.locator('.overview-usage-summary').first().evaluate((el) => ({
+            row: el.getBoundingClientRect().width,
+            track: el.querySelector('.overview-usage-track').getBoundingClientRect().width,
+          }));
+          assert.ok(Math.abs(sizes.row - sizes.track) < 1, 'Narrow compact cards give the usage bar its own full-width row');
+        }
+      }
+      await card.screenshot({ path: `.desktop-test/cluster-responsive-${style}-narrow.png` });
+    }
+    assert.deepEqual(errors, []);
+    assert.deepEqual(layoutFailures, []);
+    console.log('PASS cluster container widths 1100/760/360; all three card styles at 320px');
+  } else if (previewThree) {
     const group = page.getByRole('region', { name: '三机集群 · 示例数据', exact: true });
     await group.waitFor();
     fs.mkdirSync('.desktop-test', { recursive: true });
