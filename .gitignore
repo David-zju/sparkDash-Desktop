@@ -5,6 +5,9 @@ release/
 .desktop-test/
 .env
 .DS_Store
+.claude/
+CLAUDE.md
+CLAUDE.local.md
 __pycache__/
 *.py[cod]
 *.log
