@@ -4,7 +4,7 @@ import { render } from "../../testing/render";
 import type { SparkSnapshot, GpuMetrics } from "../../api/types";
 import { GpuPanel } from "../SparkPage/GpuPanel";
 
-vi.mock("../../hooks/metricsStore", () => ({ useMetricsHistoryTail: () => [] }));
+vi.mock("../../hooks/metricsStore", () => ({ useMetricsHistoryTail: () => [], useTimedMetricsHistory: () => [] }));
 const gpu: GpuMetrics = {
   usage: 0, temperature: 40, power: { draw: 4, limit: 120 },
   vram: { used: 1024, total: 131072, available: 126976, percentage: 1 },
@@ -32,4 +32,11 @@ it("labels GPU attribution separately from the shared pool capacity", () => {
   const discrete = render(<GpuPanel gpu={gpu} sparkId="fixture" temperatureUnit="celsius" />);
   expect(discrete.container.textContent).toContain("VRAM");
   expect(discrete.container.textContent).not.toContain("LPDDR5X");
+});
+
+it("preserves an explicitly reported zero available capacity", () => {
+  const ui = render(<OverviewPage sparks={[{ ...spark, metrics: { ...spark.metrics,
+    unifiedMemory: { ...spark.metrics.unifiedMemory!, available: 0 },
+  } }]} />);
+  expect(ui.container.textContent).toContain("Available 0 MB");
 });

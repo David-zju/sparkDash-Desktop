@@ -4,7 +4,7 @@ import type { SparkSnapshot } from "../../api/types";
 import { isWorkerSpark, resolveSparkRole } from "../../api/sparkRole";
 import { shutdownAllSparks, rebootAllSparks, updateAllHermes, wakeAllSparks } from "../../api/client";
 import { ConfirmShutdownDialog } from "../ConfirmShutdownDialog";
-import { MetricBar } from "../ui/MetricBar";
+import { UsageTrends } from "./UsageTrends";
 import { FleetEnergyCard } from "./FleetEnergyCard";
 import { FleetAlertStrip } from "./FleetAlertStrip";
 import { FleetTokenTotals } from "./FleetTokenTotals";
@@ -13,9 +13,30 @@ import { formatMb } from "../../shared/formatBytes";
 import { ClusterBenchmarkDialog } from "./ClusterBenchmarkDialog";
 import { ClusterSetupDialog } from "./ClusterSetupDialog";
 import { clusterGroups } from "./clusters";
+import { preferences } from "../../desktop";
+
+type CardStyle = "sections" | "compact" | "trends";
+const CARD_STYLE_KEY = "sparkdash-overview-card-style";
+const CARD_STYLES: Array<{ value: CardStyle; label: string }> = [
+  { value: "sections", label: "Sectioned cards" },
+  { value: "compact", label: "Compact rows" },
+  { value: "trends", label: "Live trends" },
+];
+
+function savedCardStyle(): CardStyle {
+  try {
+    const saved = preferences.getItem(CARD_STYLE_KEY);
+    return CARD_STYLES.find((style) => style.value === saved)?.value ?? "trends";
+  } catch {
+    return "trends";
+  }
+}
 
 interface OverviewPageProps {
   sparks: SparkSnapshot[];
+  now?: number;
+  pollIntervalMs?: number;
+  telemetryLive?: boolean;
   hideOffline?: boolean;
   hideWorkers?: boolean;
   showFleetEnergy?: boolean;
@@ -85,13 +106,138 @@ function MiniStat({
   );
 }
 
+type Tone = "default" | "warning" | "danger";
+
+/** Thresholds are in °C regardless of the display unit. */
+function tempTone(c: number, warn: number, danger: number): Tone {
+  return c > danger ? "danger" : c > warn ? "warning" : "default";
+}
+
+function UsageSummary({ compact, gpuUsage, cpuUsage, gpuTemperature, cpuTemperature, fmtTemp }: {
+  compact: boolean;
+  gpuUsage: number | null;
+  cpuUsage: number | null;
+  gpuTemperature: number;
+  cpuTemperature: number;
+  fmtTemp: (c: number) => string;
+}) {
+  const processors = [
+    { name: "GPU", label: tr("GPU utilization"), value: gpuUsage, temperature: gpuTemperature, tone: tempTone(gpuTemperature, 65, 85) },
+    { name: "CPU", label: tr("CPU utilization"), value: cpuUsage, temperature: cpuTemperature, tone: tempTone(cpuTemperature, 85, 95) },
+  ];
+  return <div className={compact ? "overview-compact-usage" : "overview-sectioned-usage"}>
+    {compact && <div className="overview-compact-heading"><span>{tr("Compute utilization")}</span><span>{tr("Temperature")}</span></div>}
+    {processors.map((processor) => {
+      const pct = processor.value != null && Number.isFinite(processor.value)
+        ? Math.round(Math.max(0, Math.min(100, processor.value))) : null;
+      return <section key={processor.name} className="overview-usage-summary" aria-label={processor.label}>
+        <span className="overview-usage-label">{compact ? processor.name : processor.label}</span>
+        <span className="overview-usage-value font-tabular">{pct ?? "—"}{pct != null && <small>%</small>}</span>
+        <div className="overview-usage-track" role={pct == null ? undefined : "meter"}
+          aria-label={processor.label} aria-valuemin={pct == null ? undefined : 0}
+          aria-valuemax={pct == null ? undefined : 100} aria-valuenow={pct ?? undefined}
+          aria-hidden={pct == null ? true : undefined}>
+          {pct != null && <div className="metric-bar-fill" style={{ ["--bar-pct" as string]: `${pct}%` }} />}
+        </div>
+        {compact && <span className={`overview-compact-temperature font-tabular ${processor.tone === "danger" ? "text-danger" : processor.tone === "warning" ? "text-warning" : "text-text"}`}
+          aria-label={tr(processor.name === "GPU" ? "GPU temperature" : "CPU temperature")}>
+          {processor.temperature > 0 ? fmtTemp(processor.temperature) : "—"}
+        </span>}
+      </section>;
+    })}
+  </div>;
+}
+
+/** Capacity bar for memory pools: thicker track plus used / total and free. */
+function CapacityBar({
+  label,
+  used,
+  total,
+  available,
+  shared = false,
+}: {
+  label: string;
+  used: number;
+  total: number;
+  available?: number;
+  shared?: boolean;
+}) {
+  const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((used / total) * 100))) : 0;
+  const free = Math.max(0, available ?? total - used);
+  const pressure = total > 0 ? Math.max(pct, 100 - free / total * 100) : 0;
+  const freeTone =
+    pressure >= 95 ? "text-danger" : pressure >= 85 ? "text-warning" : "text-text";
+  return (
+    <div className="overview-capacity">
+      <div className="overview-capacity-heading">
+        <span className="text-[12px] text-muted">{label}</span>
+        <span className="font-tabular text-[16px] font-medium text-text">
+          {total > 0 ? `${fmtStorage(used, false)} / ${fmtStorage(total, true)}` : "—"}
+        </span>
+      </div>
+      {shared && <span className="text-[11px] text-muted">{tr("Shared by CPU / GPU")}</span>}
+      {total > 0 && <div
+        className="overview-capacity-track"
+        role="meter"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <div
+          className={`metric-bar-fill overview-capacity-fill ${pressure >= 95 ? "bg-danger" : pressure >= 85 ? "bg-warning" : ""}`}
+          style={{ ["--bar-pct" as string]: `${pct}%` }}
+        />
+      </div>}
+      {total > 0 && (
+        <div className="flex justify-between text-[11px] text-muted">
+          <span>
+            {tr("Available")} <span className={`font-tabular ${freeTone}`}>{formatMb(free)}</span>
+          </span>
+          <span className="font-tabular">{tr("{0}% used", [pct])}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Point-in-time reading (temperature, power) — a number, not a bar. */
+function ReadoutTile({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone: Tone;
+}) {
+  const valueClass = tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-text-strong";
+  return (
+    <div className="overview-readout">
+      <span className="text-[11px] text-muted">{label}</span>
+      <span className={`font-tabular overview-readout-value ${valueClass}`}>{value}</span>
+      {sub && <span className="font-tabular text-[11px] text-muted">{sub}</span>}
+    </div>
+  );
+}
+
 function SparkCard({
   spark,
   headSparkName,
   temperatureUnit,
+  now,
+  pollIntervalMs,
+  telemetryLive,
+  cardStyle,
   onSelect,
 }: {
   spark: SparkSnapshot;
+  now: number;
+  pollIntervalMs: number;
+  telemetryLive: boolean;
+  cardStyle: CardStyle;
   headSparkName?: string | null;
   temperatureUnit: "celsius" | "fahrenheit";
   onSelect?: (id: string) => void;
@@ -101,28 +247,26 @@ function SparkCard({
   const um = spark.metrics.unifiedMemory;
   const online = spark.online;
 
-  const usage = gpu?.usage ?? 0;
+  const usage = gpu?.usage ?? null;
+  const cpu = spark.metrics.cpu;
+  const cpuUsageShown = !!cpu && cpu.usageAvailable !== false;
+  const cpuUsage = cpuUsageShown ? cpu!.usage : null;
+  const fmtTemp = (c: number) =>
+    temperatureUnit === "fahrenheit" ? `${celsiusToFahrenheit(c)}°F` : `${c}°C`;
   const tempRaw = gpu?.temperature ?? 0;
-  const displayTemp = temperatureUnit === "fahrenheit" ? celsiusToFahrenheit(tempRaw) : tempRaw;
-  const tempLabel = temperatureUnit === "fahrenheit" ? `${displayTemp}°F` : `${displayTemp}°C`;
+  const tempLabel = tempRaw > 0 ? fmtTemp(tempRaw) : "—";
+  const cpuTempRaw = cpu?.temperature ?? 0;
+  const cpuTempLabel = fmtTemp(cpuTempRaw);
   // Spark totals describe the whole shared pool, not GPU process attribution.
   const memory = spark.kind === "host" ? gpu?.vram : um;
-  const vramPct = memory?.percentage ?? 0;
   const vramUsed = memory?.used ?? 0;
   const vramTotal = memory?.total ?? 0;
-  const vramAvail = memory?.available ?? 0;
-
-  // Temperature bar: cool → success, warm → warning, hot → danger
-  const tempBarColor =
-    tempRaw > 85 ? "bg-danger" : tempRaw > 65 ? "bg-warning" : tempRaw > 40 ? "bg-accent" : "bg-success";
-  // Usage bar: accent for moderate, warning high, danger critical
-  const usageBarColor = usage > 85 ? "bg-danger" : usage > 60 ? "bg-warning" : "bg-accent";
-  // VRAM allocation: accent normal → warning/danger as it fills
-  const vramBarColor = vramPct > 85 ? "bg-danger" : vramPct > 60 ? "bg-warning" : "bg-accent";
+  const vramAvail = memory?.available;
 
   return (
     <div
-      className="overview-card flex flex-col"
+      className="overview-card overview-metric-card flex flex-col"
+      data-card-style={cardStyle}
       style={{
         padding: "var(--density-card-pad)",
         gap: "var(--density-card-gap)",
@@ -207,7 +351,7 @@ function SparkCard({
         </span>
       </div>
 
-      {!online || !gpu ? (
+      {!online ? (
         <div className="flex h-[120px] items-center justify-center">
           <span className="text-[13px] text-muted">
             {online ? tr("GPU metrics unavailable") : tr("Host unreachable")}
@@ -215,89 +359,64 @@ function SparkCard({
         </div>
       ) : (
         <>
-          {/* Three headline bars: GPU alloc, Temp, Usage */}
-          <div className="flex flex-col gap-3.5">
-            <MetricBar
+          {cardStyle === "trends" ? <UsageTrends sparkId={spark.id} gpuUsage={telemetryLive ? usage : null}
+            cpuUsage={telemetryLive ? cpuUsage : null} now={now} pollIntervalMs={pollIntervalMs} /> :
+            <UsageSummary compact={cardStyle === "compact"} gpuUsage={telemetryLive ? usage : null}
+              cpuUsage={telemetryLive ? cpuUsage : null} gpuTemperature={tempRaw} cpuTemperature={cpuTempRaw} fmtTemp={fmtTemp} />}
+
+          {/* Memory: capacity bar — thicker, with the free amount spelled out. */}
+          <section className="overview-memory-section">
+            <CapacityBar
               label={spark.kind === "host" ? "VRAM" : tr("Shared memory")}
-              value={vramUsed}
-              max={vramTotal}
-              color={vramBarColor}
-              caption={vramTotal > 0 ? `${fmtStorage(vramUsed, false)} / ${fmtStorage(vramTotal, true)}` : "—"}
+              used={vramUsed}
+              total={vramTotal}
+              available={vramAvail}
+              shared={spark.kind !== "host"}
             />
-            {spark.kind === "host" && (() => {
+            {spark.kind === "host" && (
               // Non-Spark hosts: system RAM is separate from discrete VRAM.
-              const ram = spark.metrics.ram;
-              const rUsed = ram?.used ?? 0;
-              const rTotal = ram?.total ?? 0;
-              const rPct = rTotal > 0 ? Math.round((rUsed / rTotal) * 100) : 0;
-              const ramBarColor = rPct > 85 ? "bg-danger" : rPct > 60 ? "bg-warning" : "bg-accent";
-              return (
-                <MetricBar
-                  label="RAM"
-                  value={rUsed}
-                  max={rTotal}
-                  color={ramBarColor}
-                  caption={rTotal > 0 ? `${fmtStorage(rUsed, false)} / ${fmtStorage(rTotal, true)}` : "—"}
+              <CapacityBar
+                label="RAM"
+                used={spark.metrics.ram?.used ?? 0}
+                total={spark.metrics.ram?.total ?? 0}
+              />
+            )}
+          </section>
+
+          {/* Thermals and power: point-in-time readings, shown as numeric tiles. */}
+          <section className="flex flex-col gap-2">
+            <div className={cardStyle === "compact" ? "overview-compact-power" : "overview-readouts"}>
+              {cardStyle !== "compact" && <><ReadoutTile
+                label={tr("GPU temperature")}
+                value={tempLabel}
+                tone={tempTone(tempRaw, 65, 85)}
+              />
+              {cpuTempRaw > 0 ? (
+                <ReadoutTile
+                  label={tr("CPU temperature")}
+                  value={cpuTempLabel}
+                  tone={tempTone(cpuTempRaw, 85, 95)}
                 />
-              );
-            })()}
-            <MetricBar
-              label={
-                spark.kind === "host" || (spark.metrics.cpu?.temperature ?? 0) > 0
-                  ? "GPU"
-                  : tr("Temperature")
-              }
-              value={displayTemp}
-              max={temperatureUnit === "fahrenheit" ? 212 : 100}
-              color={tempBarColor}
-              caption={tempLabel}
-            />
-            {(spark.metrics.cpu?.temperature ?? 0) > 0 && (() => {
-              const cpuRaw = spark.metrics.cpu?.temperature ?? 0;
-              const cpuDisplay =
-                temperatureUnit === "fahrenheit" ? celsiusToFahrenheit(cpuRaw) : cpuRaw;
-              const cpuLabel =
-                temperatureUnit === "fahrenheit" ? `${cpuDisplay}°F` : `${cpuDisplay}°C`;
-              const cpuBarColor =
-                cpuRaw > 95 ? "bg-danger" : cpuRaw > 85 ? "bg-warning" : cpuRaw > 50 ? "bg-accent" : "bg-success";
-              return (
-                <MetricBar
-                  label="CPU"
-                  value={cpuDisplay}
-                  max={temperatureUnit === "fahrenheit" ? 212 : 100}
-                  color={cpuBarColor}
-                  caption={cpuLabel}
-                />
-              );
-            })()}
+              ) : (
+                <ReadoutTile label={tr("CPU temperature")} value="—" tone="default" />
+              )}</>}
+              <ReadoutTile
+                label={tr("GPU Power")}
+                value={gpu?.power && Number.isFinite(gpu.power.draw) ? `${Number(gpu.power.draw.toFixed(1))} W` : "—"}
+                sub={gpu?.power?.limit ? tr("Limit {0} W", [gpu.power.limit]) : undefined}
+                tone="default"
+              />
+            </div>
             {gpu?.throttle?.thermal && (
               <div
                 className="rounded border border-danger/40 bg-danger/10 px-2 py-1 text-[11px] font-medium text-danger"
                 title={gpu.throttle.detail || tr("GPU thermal slowdown engaged")}
               >{tr("Thermal throttle")}</div>
             )}
-            <MetricBar
-              label={tr("Usage")}
-              value={usage}
-              max={100}
-              color={usageBarColor}
-              caption={`${usage}%`}
-            />
-          </div>
+          </section>
 
           {/* Secondary stats */}
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3.5">
-            <MiniStat
-              label={tr("GPU Power")}
-              value={`${gpu?.power?.draw ?? 0}W / ${gpu?.power?.limit ?? 0}W`}
-            />
-            {vramAvail > 0 && (
-              <MiniStat
-                label={tr("Available")}
-                value={formatMb(vramAvail)}
-                tone={vramAvail < 4096 ? "danger" : vramAvail < 16384 ? "warning" : "accent"}
-              />
-            )}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3.5">
             {(() => {
               // Find the root disk by label "/" (the collector maps the host
               // root mount to that label). Fall back to the GB10 partition name
@@ -380,16 +499,16 @@ function SparkCard({
             return (
               <div className="mt-3.5 grid grid-cols-2 gap-2 border-t border-border pt-3">
                 <div className="text-center">
-                  <span className="font-tabular text-[28px] font-bold leading-none text-text-strong">
+                  <span className="font-tabular text-[22px] font-semibold leading-none text-text-strong">
                     {llm.liveRatesAvailable === false ? "—" : llm.generationTps.toFixed(0)}
                   </span>
                   <span className="text-sm font-normal text-muted"> tok/s</span>
                 </div>
                 <div className="border-l border-border text-center">
-                  <span className="font-tabular text-[28px] font-bold leading-none text-text-strong">
+                  <span className="font-tabular text-[22px] font-semibold leading-none text-text-strong">
                     {llm.liveRatesAvailable === false ? "—" : llm.prefillTps.toFixed(0)}
                   </span>
-                  <span className="text-sm font-normal text-muted">{tr(" prefill")}</span>
+                  <span className="text-[11px] font-normal text-muted">{tr(" prefill")} · tok/s</span>
                 </div>
               </div>
             );
@@ -402,6 +521,9 @@ function SparkCard({
 
 export function OverviewPage({
   sparks,
+  now = Date.now(),
+  pollIntervalMs = 2_000,
+  telemetryLive = true,
   hideOffline = false,
   hideWorkers = false,
   showFleetEnergy = false,
@@ -412,6 +534,17 @@ export function OverviewPage({
   onSelectSpark,
 }: OverviewPageProps) {
   useLocale();
+  const [cardStyle, setCardStyle] = useState<CardStyle>(savedCardStyle);
+  const [cardStyleSaveFailed, setCardStyleSaveFailed] = useState(false);
+  function changeCardStyle(style: CardStyle) {
+    setCardStyle(style);
+    try {
+      preferences.setItem(CARD_STYLE_KEY, style);
+      setCardStyleSaveFailed(false);
+    } catch {
+      setCardStyleSaveFailed(true);
+    }
+  }
   const [query, setQuery] = useState("");
   const [clusterSetup, setClusterSetup] = useState<{ headId?: string } | null>(null);
   const [benchmarkHeadId, setBenchmarkHeadId] = useState<string | null>(null);
@@ -582,10 +715,18 @@ export function OverviewPage({
       {showFleetEnergy ? <FleetEnergyCard nodeCount={sparks.length} /> : null}
       {showFleetExceptions ? <FleetAlertStrip sparks={sparks} onSelect={onSelectSpark} /> : null}
       <div className="flex flex-wrap items-end justify-between gap-6">
+        <div className="flex flex-wrap items-center gap-4">
         <h1
           className="font-normal leading-tight tracking-tight text-text-strong"
           style={{ fontSize: "var(--density-overview-title)" }}
         >{tr("Overview")}</h1>
+        <div className="overview-view-switch" role="group" aria-label={tr("Card style")}>
+          {CARD_STYLES.map((style) => <button key={style.value} type="button"
+            aria-pressed={cardStyle === style.value} onClick={() => changeCardStyle(style.value)}>
+            {tr(style.label)}
+          </button>)}
+        </div>
+        </div>
         <div className="flex flex-wrap items-end justify-end gap-3">
           <button type="button" onClick={() => setClusterSetup({})} className="flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20">
             <ActivityIcon className="h-4 w-4" />{tr("Detect 200G / Create cluster")}
@@ -683,6 +824,7 @@ export function OverviewPage({
           )}
         </div>
       </div>
+      {cardStyleSaveFailed && <p role="status" className="text-xs text-warning">{tr("Card style changed, but could not be saved for next time.")}</p>}
       {showOverviewSearch ? (
       <div className="flex flex-wrap gap-2" role="search" aria-label={tr("Filter fleet units")}>
         <input
@@ -735,7 +877,7 @@ export function OverviewPage({
             </div>
           </header>
           <div className="overview-page grid sm:grid-cols-2 xl:grid-cols-3" style={{ gap: "var(--density-page-gap)" }}>
-            {visibleMembers.map((spark) => <SparkCard key={spark.id} spark={spark} headSparkName={group.head.name} temperatureUnit={temperatureUnit} onSelect={onSelectSpark} />)}
+            {visibleMembers.map((spark) => <SparkCard key={spark.id} spark={spark} headSparkName={group.head.name} temperatureUnit={temperatureUnit} now={now} pollIntervalMs={pollIntervalMs} telemetryLive={telemetryLive} cardStyle={cardStyle} onSelect={onSelectSpark} />)}
           </div>
         </section>;
       })}
@@ -753,6 +895,10 @@ export function OverviewPage({
                 : null
             }
             temperatureUnit={temperatureUnit}
+            now={now}
+            pollIntervalMs={pollIntervalMs}
+            telemetryLive={telemetryLive}
+            cardStyle={cardStyle}
             onSelect={onSelectSpark}
           />
         ))}

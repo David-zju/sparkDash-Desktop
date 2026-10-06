@@ -135,6 +135,7 @@ function DashboardApp() {
     activeSpark,
     connected,
     lastValidSnapshotAt,
+    snapshotGeneratedAt,
     snapshotError,
     refreshInterval,
   } = useSnapshot();
@@ -355,6 +356,11 @@ function DashboardApp() {
           {isOverview ? (
             <OverviewPage
               sparks={displaySparks}
+              now={snapshotGeneratedAt != null && lastValidSnapshotAt != null
+                ? snapshotGeneratedAt + Math.max(0, telemetryNow - lastValidSnapshotAt)
+                : telemetryNow}
+              pollIntervalMs={refreshInterval ?? 2_000}
+              telemetryLive={connected && !telemetryStale}
               hideOffline={settings?.autoHideOffline ?? false}
               hideWorkers={hideWorkers}
               showFleetEnergy={settings?.showFleetEnergy ?? false}
